@@ -1,5 +1,22 @@
 # Pipeline de entrenamiento · Lab 4
 
+# Guía de corrida paso a paso (Colab Pro)
+
+**Siempre `Run all`.** Solo cambia `MODE` en la celda 1.
+1. Colab → *Archivo → Abrir cuaderno → GitHub* → `Vasco2510/walker` → `notebooks/train_cloud.ipynb`.
+2. *Entorno de ejecución → Cambiar tipo de entorno*: acelerador **L4 GPU** + **RAM alta** activada → Guardar.
+3. Celda 1: `MODE = "calibrar"` → *Ejecutar todo*. Acepta el acceso a Drive. En ~5 min imprime una tabla de velocidades: cópiala.
+4. Con la tabla se fija `utd`/`batch` en `configs/sac_max.yaml` (commit + push; el notebook siempre descarga lo último).
+5. Celda 1: `MODE = "entrenar"` → *Ejecutar todo*. Deja la pestaña abierta. Si se corta: *Ejecutar todo* otra vez, reanuda solo.
+6. Tras ~1 h, mira la celda 5 (reporte): velocidad real, ETA y evaluaciones.
+7. Al terminar, la celda 4 verifica con `evaluar.py` y baja `agente.zip`.
+
+**Qué hardware elegir:** SAC (`sac_max`) → **L4 + RAM alta**. PPO (`ppo_curriculum`) → **CPU + RAM alta** (la GPU no lo acelera). T4/A100/H100/TPU: no son necesarios para este proyecto.
+**Segunda corrida en paralelo:** otra pestaña/sesión (Colab CPU con PPO, o Kaggle) con `OVERRIDES = ["name=sac_max_s1", "seed=1"]` o `CONFIG = "configs/ppo_curriculum.yaml"`.
+
+---
+
+
 Idea: **el código vive en el repo; el notebook de la nube solo lo lanza.** Iterar = editar `.py`/YAML → `git push` → *Run all*.
 
 ```
