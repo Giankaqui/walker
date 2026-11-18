@@ -55,7 +55,7 @@ Entorno de prueba: Python 3.11 + `pip install -r requirements-train.txt` + torch
 5. `--fresh` archiva en vez de borrar.
 
 ## 7. Estado y hechos conocidos
-- **No medido:** T4 vs L4 en este proyecto (decisión por calibración, ver PIPELINE.md).
+- **No medido:** T4 vs L4 vs CPU de Colab en este proyecto (decisión por calibración en cada máquina, ver PIPELINE.md). El CPU es candidato también para SAC con batch chico; no descartarlo sin medirlo.
 - **Medido en Colab L4 (log del usuario, Python 3.13, código antiguo):** SAC estándar (UTD 1, batch 512, 256×256) ≈ **98 sps**. A ese ritmo 26M pasos ≈ 73 h → los 26M de `sac_max` son un **techo**, no un plan; el límite real son las horas (≈36 h de entrenamiento previstas: mié–vie, sesiones de ~12 h).
 - **Medido en local (CPU, equipo débil):** ~85 % del tiempo va a las actualizaciones de SAC, ~15 % al simulador; PPO ≈ 20× más pasos/s que SAC UTD 1 en CPU. **No medido:** efecto real de UTD/batch en GPU (para eso es `training.benchmark`).
 - `utd`/`batch_size` de `configs/sac_max.yaml` son **provisionales** hasta calibrar.
