@@ -20,6 +20,13 @@
 
 **RESULTADO DE LA CALIBRACIÓN (medido):** Colab CPU (2 vCPU) = 22–28 sps con SAC → **inviable**. Kaggle T4 (4 vCPU) = 98 → 334 → 534 sps según variante. T4 y L4 rinden igual (98 sps con UTD 1). **Usar GPU T4.**
 
+**Dónde está el modelo entrenado:**
+- Colab: Drive → `Mi unidad/lab4_runs/<nombre>/` (`<nombre>` = `sac_max` salvo `name=` en OVERRIDES). Allí: `best_agent/` (**el que se entrega**: `policy.pt` + `meta.json`), `last_agent/`, `agente.zip` (al terminar), `eval_history.jsonl`, `metrics.jsonl`.
+- Kaggle: pestaña **Output** de la versión (`agente.zip`), y `runs/<nombre>/best_agent/`.
+- `best_agent/` se actualiza cada vez que una evaluación mejora (la primera a los 500 000 pasos): no hace falta esperar al final.
+- **Sacar el modelo sin entrenar** (p. ej. mientras otra sesión sigue corriendo): en una sesión nueva, celda 1 con `MODE = "exportar"` y el mismo `CONFIG`/`OVERRIDES name=`; Ejecutar todo → verifica con `evaluar.py` y deja `agente.zip` (en Colab lo descarga).
+- A mano: copiar `best_agent/policy.pt` y `meta.json` a la carpeta `agente/` del repo y correr `python evaluar.py`.
+
 **Qué hardware elegir (histórico, antes de medir):** PPO (`ppo_curriculum`) → **CPU + RAM alta** (la GPU no lo acelera). SAC (`sac_max`) → **T4 + RAM alta** por defecto, pero **el CPU también es candidato**: con batch chico y poco UTD no queda lejos de una GPU (en un portátil de 8 núcleos: ~16 ms/actualización con batch 512 frente a ~10 ms en una L4), y el costo en CPU crece con el batch mientras que en GPU casi no. Esas cifras NO son de Colab: la velocidad del CPU de Colab es un dato pendiente.
 **Cómo decidir (≈5 min por máquina):** ejecuta `MODE="calibrar"` en **T4** y en **CPU + RAM alta** (el benchmark usa el dispositivo que haya y muestra `cpus` en la línea `Entorno:`). Compara `sps` y `ms/upd` de la misma variante y elige la configuración (variante + máquina) con más `sps`. A100/H100/G4/TPU: no son necesarios. El CPU gasta bastantes menos unidades de Colab.
 

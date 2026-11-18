@@ -44,7 +44,7 @@ runs/<nombre>/     ← resultados (git los ignora; en Colab viven en Drive)
 - **Local (solo humo):** `python -m training.train --config configs/smoke.yaml --fresh` (minutos, CPU). El equipo local es poco potente: **no entrenar en serio ahí**.
 - **Colab Pro (principal):** abrir `notebooks/train_cloud.ipynb` desde GitHub, runtime **T4 + RAM alta** para SAC (L4 solo si `MODE="calibrar"` la muestra ≥1,3× más rápida; el cuello de botella no es el cómputo de GPU). Primera vez `MODE="calibrar"` → Run all; luego `MODE="entrenar"` → Run all. Si se corta, Run all otra vez (reanuda).
 - **Paralelo:** otra sesión (Kaggle, o Colab CPU RAM alta con `configs/ppo_curriculum.yaml`) o segunda semilla (`OVERRIDES=["name=sac_max_s1","seed=1"]`). Al final: `python -m training.compare <runs>/* --promote agente`.
-- **Entrega:** `python -m training.export runs/<nombre> --to agente` → `python evaluar.py` → zip de `agente/`.
+- **Entrega:** `python -m training.export runs/<nombre> --to agente` → `python evaluar.py` → zip de `agente/`. En la nube: `MODE="exportar"` en el notebook hace lo mismo sin entrenar (el mejor agente está en `<runs>/<nombre>/best_agent/`).
 
 ## 6. Verificación (hacer tras tocar `training/` o `agente/`)
 Entorno de prueba: Python 3.11 + `pip install -r requirements-train.txt` + torch. Probar con configs `smoke*.yaml` en un directorio de runs aparte (`LAB4_RUNS_DIR`):
