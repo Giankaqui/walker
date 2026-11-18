@@ -49,21 +49,55 @@ def resolve_suites(suites: dict) -> dict[str, list[str]]:
     return out
 
 
-class ProgressCallback(BaseCallback):
-    """Imprime una línea compacta y corta el entrenamiento al agotar `time_limit_hours`."""
+class Timers:
+    """Acumula en qué se va el tiempo: collect (simulador + inferencia), update (gradientes), eval, ckpt."""
 
-    def __init__(self, every_steps: int, total_steps: int, time_limit_hours: float | None, stage_label):
+    def __init__(self):
+        self.t = {"collect": 0.0, "update": 0.0, "eval": 0.0, "ckpt": 0.0}
+
+    def add(self, name: str, seconds: float) -> None:
+        self.t[name] += seconds
+
+    def nested(self) -> float:  # tiempo de callbacks que ocurre DENTRO de la recolección
+        return self.t["eval"] + self.t["ckpt"]
+
+
+class ProgressCallback(BaseCallback):
+    """Línea de progreso con desglose de tiempo + metrics.jsonl; corta al agotar `time_limit_hours`.
+
+    El desglose usa los hooks de rollout de SB3 (sin parchear nada): el tiempo entre el fin de un rollout y el
+    inicio del siguiente es la fase de actualización; el resto de la recolección es simulador + inferencia.
+    """
+
+    def __init__(self, every_steps: int, total_steps: int, time_limit_hours: float | None, stage_label,
+                 timers: Timers, metrics_file: Path | None = None):
         super().__init__()
         self.every, self.total = every_steps, total_steps
         self.deadline = time.time() + time_limit_hours * 3600 if time_limit_hours else None
-        self.stage_label = stage_label
+        self.stage_label, self.timers, self.metrics_file = stage_label, timers, metrics_file
         self.timed_out = False
         self._t0 = self._last_t = time.time()
         self._last_step = None
+        self._rollout_start = self._rollout_end = None
+        self._nested_at_start = 0.0
+        self._last_snap, self._last_updates = dict(timers.t), 0
 
     def _on_training_start(self):
         if self._last_step is None:
             self._last_step = self.num_timesteps
+            self._last_updates = getattr(self.model, "_n_updates", 0)
+
+    def _on_rollout_start(self):
+        now = time.perf_counter()
+        if self._rollout_end is not None:
+            self.timers.add("update", now - self._rollout_end)
+        self._rollout_start, self._nested_at_start = now, self.timers.nested()
+
+    def _on_rollout_end(self):
+        now = time.perf_counter()
+        if self._rollout_start is not None:
+            self.timers.add("collect", now - self._rollout_start - (self.timers.nested() - self._nested_at_start))
+        self._rollout_end = now
 
     def _on_step(self) -> bool:
         if self.deadline and time.time() > self.deadline:
@@ -71,17 +105,45 @@ class ProgressCallback(BaseCallback):
             print(">>> Límite de tiempo alcanzado: guardando y saliendo.", flush=True)
             return False
         if self.num_timesteps - self._last_step >= self.every:
-            now = time.time()
-            sps = (self.num_timesteps - self._last_step) / max(now - self._last_t, 1e-9)
-            buf = [e for e in self.model.ep_info_buffer if "distance" in e]
-            dist = float(np.mean([e["distance"] for e in buf])) if buf else float("nan")
-            succ = float(np.mean([e["success"] for e in buf])) if buf else float("nan")
-            self.logger.record("train/ep_distance_mean", dist)
-            self.logger.record("train/ep_success_rate", succ)
-            print(f"[{self.num_timesteps:>9,}/{self.total:,} | {sps:6.0f} sps | {self.stage_label()}] "
-                  f"train: dist={dist:6.1f} success={succ:4.0%} | {(now - self._t0) / 60:5.1f} min", flush=True)
-            self._last_step, self._last_t = self.num_timesteps, now
+            self._report()
         return True
+
+    def _report(self) -> None:
+        now = time.time()
+        wall = max(now - self._last_t, 1e-9)
+        steps = self.num_timesteps - self._last_step
+        sps = steps / wall
+        delta = {k: self.timers.t[k] - self._last_snap[k] for k in self.timers.t}
+        updates = getattr(self.model, "_n_updates", 0) - self._last_updates
+        buf = [e for e in self.model.ep_info_buffer if "distance" in e]
+        dist = float(np.mean([e["distance"] for e in buf])) if buf else float("nan")
+        succ = float(np.mean([e["success"] for e in buf])) if buf else float("nan")
+        ep_len = float(np.mean([e["l"] for e in buf])) if buf else float("nan")
+        self.logger.record("train/ep_distance_mean", dist)
+        self.logger.record("train/ep_success_rate", succ)
+        pct = {k: 100 * v / wall for k, v in delta.items()}
+        ms_upd = 1000 * delta["update"] / updates if updates else float("nan")
+        eta_h = (self.total - self.num_timesteps) / max(sps, 1e-9) / 3600
+        keep = ("ent_coef", "critic_loss", "actor_loss", "loss", "value_loss", "policy_gradient_loss", "std")
+        losses = {k.split("/")[-1]: round(float(v), 5) for k, v in self.logger.name_to_value.items()
+                  if k.startswith("train/") and isinstance(v, (int, float)) and k.split("/")[-1] in keep}
+        print(f"[{self.num_timesteps:>9,}/{self.total:,} | {sps:5.0f} sps | {self.stage_label()}] "
+              f"dist={dist:6.1f} meta={succ:4.0%} | sim {pct['collect']:3.0f}% upd {pct['update']:3.0f}% "
+              f"eval {pct['eval']:2.0f}% | {ms_upd:5.1f} ms/upd | ETA {eta_h:4.1f} h", flush=True)
+        if self.metrics_file is not None:
+            from .runtime import system_stats
+            row = {"ts": round(now), "step": int(self.num_timesteps), "stage": self.stage_label(), "sps": round(sps, 1),
+                   "wall_s": round(wall, 1), "pct": {k: round(v, 1) for k, v in pct.items()},
+                   "ms_per_update": None if updates == 0 else round(ms_upd, 2), "updates": updates,
+                   "utd": round(updates / steps, 3) if steps else None, "train_dist": dist, "train_success": succ,
+                   "ep_len": ep_len, "eta_h_total": round(eta_h, 2), "losses": losses, **system_stats()}
+            try:
+                with self.metrics_file.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(row, allow_nan=True) + "\n")
+            except OSError:
+                pass  # las métricas nunca deben tumbar el entrenamiento
+        self._last_step, self._last_t = self.num_timesteps, now
+        self._last_snap, self._last_updates = dict(self.timers.t), getattr(self.model, "_n_updates", 0)
 
 
 def rank_key(rows: list[dict]) -> tuple:
@@ -99,9 +161,11 @@ class DistanceEvalCallback(BaseCallback):
     Un fallo al evaluar nunca interrumpe el entrenamiento.
     """
 
-    def __init__(self, run_dir: Path, ctx, suites: dict, select_on, every_steps: int, meta: dict):
+    def __init__(self, run_dir: Path, ctx, suites: dict, select_on, every_steps: int, meta: dict,
+                 timers: Timers | None = None):
         super().__init__()
         self.run_dir, self.ctx, self.every, self.meta = Path(run_dir), ctx, every_steps, meta
+        self.timers = timers or Timers()
         self.suites = resolve_suites(suites)
         self.select_on = [select_on] if isinstance(select_on, str) else list(select_on)
         unknown = [s for s in self.select_on if s not in self.suites]
@@ -131,12 +195,15 @@ class DistanceEvalCallback(BaseCallback):
         return True
 
     def safe_evaluate(self):
+        t0 = time.perf_counter()
         try:
             return self.evaluate()
         except Exception:
             traceback.print_exc()
             print("    ⚠ La evaluación falló; el entrenamiento continúa.", flush=True)
             return None
+        finally:
+            self.timers.add("eval", time.perf_counter() - t0)
 
     def evaluate(self) -> tuple:
         self._last = self.evaluated_at = self.num_timesteps
@@ -174,9 +241,10 @@ class DistanceEvalCallback(BaseCallback):
 
 
 class CheckpointCallback(BaseCallback):
-    def __init__(self, manager, ctx, every_steps: int):
+    def __init__(self, manager, ctx, every_steps: int, timers: Timers | None = None):
         super().__init__()
         self.manager, self.ctx, self.every = manager, ctx, every_steps
+        self.timers = timers or Timers()
         self._last = None
 
     def _on_training_start(self):
@@ -185,6 +253,8 @@ class CheckpointCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last >= self.every:
+            t0 = time.perf_counter()
             self.manager.try_save(self.model, self.ctx.vn)  # un fallo de disco/Drive no mata el entrenamiento
+            self.timers.add("ckpt", time.perf_counter() - t0)
             self._last = self.num_timesteps
         return True

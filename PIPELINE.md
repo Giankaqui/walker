@@ -55,6 +55,14 @@ La política evaluada es **exactamente el `policy.pt` que se entrega** (red + no
 
 **No cubre:** reiniciar la sesión automáticamente (hay que dar Run all de nuevo); Colab sin Drive montado (avisa, pero los datos son efímeros); Kaggle solo conserva `/kaggle/working` al terminar con *Save Version*.
 
+## Métricas (mediciones realistas siempre)
+- Cada `progress_every` pasos: `[paso | sps | stage] dist meta | sim% upd% eval% | ms/upd | ETA`. `sim` = simulador + inferencia, `upd` = gradientes.
+- `runs/<nombre>/metrics.jsonl`: lo mismo en JSON + UTD real, pérdidas, `ent_coef`, uso de GPU/CPU/RAM.
+- `python -m training.benchmark`: prueba 6 configuraciones de SAC en la máquina real y estima horas por 10M pasos (celda 2b del notebook).
+- `python -m training.report <run>`: velocidad estable, reparto de tiempo, proyección a cada stage y tabla de evaluaciones. **Pegar su salida basta para estimar con datos reales.**
+- `python -m training.compare runs/*`: ranking de runs con el criterio del curso (`--promote agente` copia el ganador).
+- `utd:` en el YAML fija las actualizaciones por transición sin depender de `n_envs`.
+
 ## GPU
 Cuello de botella = simulador Box2D (1 núcleo por entorno, ~5k pasos/s) y, en SAC, las actualizaciones de la red (MLP de 256x256, <1 GB de VRAM, 1 GPU cualquiera basta; una más grande no acelera). PPO va igual o mejor en CPU (el pipeline lo fuerza). Mida los `sps` reales en la línea de progreso del entrenamiento.
 

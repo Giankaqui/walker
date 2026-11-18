@@ -22,7 +22,7 @@ from stable_baselines3.common.logger import configure
 from stable_baselines3.common.utils import set_random_seed
 from torch import nn
 
-from .callbacks import CheckpointCallback, DistanceEvalCallback, ProgressCallback
+from .callbacks import CheckpointCallback, DistanceEvalCallback, ProgressCallback, Timers
 from .checkpoints import CheckpointManager
 from .config import load_config
 from .envs import build_vec_env
@@ -45,10 +45,12 @@ def _init_dir(cfg: dict) -> Path:
     return src if src.is_absolute() else runs_root() / src
 
 
-def build_model(cfg: dict, venv, device: str):
+def build_model(cfg: dict, venv, device: str, n_envs: int):
     cls = ALGOS[cfg["algo"]]
     kwargs = dict(cfg.get("algo_kwargs") or {})
     policy_kwargs = dict(kwargs.pop("policy_kwargs", {}) or {})
+    if cfg.get("utd") is not None and cfg["algo"] in ("SAC", "TD3"):  # actualizaciones por transición, sin depender de n_envs
+        kwargs["gradient_steps"] = max(1, round(float(cfg["utd"]) * int(kwargs.get("train_freq", 1)) * n_envs))
     if isinstance(policy_kwargs.get("activation_fn"), str):
         policy_kwargs["activation_fn"] = ACTIVATIONS[policy_kwargs["activation_fn"]]
     if cfg.get("init_from"):  # arranque en caliente desde el mejor modelo de otro experimento
@@ -129,15 +131,18 @@ def run(cfg: dict, run_dir: Path, fresh: bool) -> None:
             except Exception as exc:  # buffer corrupto: se continúa con uno vacío en vez de abortar
                 print(f"⚠ Replay buffer ilegible ({exc!r}); continúo con el buffer vacío.", flush=True)
     else:
-        model = build_model(cfg, venv, device)
+        model = build_model(cfg, venv, device, n_envs)
     formats = ["csv"] + (["tensorboard"] if _has_tensorboard() else [])
     model.set_logger(configure(str(run_dir / "logs"), formats))
 
     current = {"i": stage_idx}
     label = lambda: f"{current['i'] + 1}/{len(stages)} {stages[current['i']].get('name', '')}"
-    progress = ProgressCallback(ev_cfg.get("progress_every", 10_000), ends[-1], cfg.get("time_limit_hours"), label)
-    evaluator = DistanceEvalCallback(run_dir, ctx, ev_cfg["suites"], ev_cfg["select_on"], ev_cfg["every_steps"], meta)
-    callbacks = CallbackList([progress, evaluator, CheckpointCallback(manager, ctx, ck_cfg.get("every_steps", 100_000))])
+    timers = Timers()
+    progress = ProgressCallback(ev_cfg.get("progress_every", 10_000), ends[-1], cfg.get("time_limit_hours"), label,
+                                timers, run_dir / "metrics.jsonl")
+    evaluator = DistanceEvalCallback(run_dir, ctx, ev_cfg["suites"], ev_cfg["select_on"], ev_cfg["every_steps"], meta, timers)
+    callbacks = CallbackList([progress, evaluator,
+                              CheckpointCallback(manager, ctx, ck_cfg.get("every_steps", 100_000), timers)])
 
     try:
         for i in range(stage_idx, len(stages)):

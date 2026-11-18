@@ -71,3 +71,21 @@ def persistence_warning(run_dir: Path) -> str | None:
         return ("ℹ Kaggle solo conserva /kaggle/working al terminar la ejecución con 'Save Version' (Run All). "
                 "Si la sesión se corta antes, se pierde; use time_limit_hours para salir limpio antes del límite.")
     return None
+
+
+def system_stats() -> dict:
+    """Uso de GPU/CPU/RAM en este instante (cada dato es opcional: si no se puede leer, se omite)."""
+    stats: dict = {}
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5).stdout
+        util, used, total = (float(x) for x in out.strip().splitlines()[0].split(","))
+        stats.update(gpu_util_pct=util, gpu_mem_used_mb=used, gpu_mem_total_mb=total)
+    except Exception:
+        pass
+    try:
+        import psutil
+        stats.update(cpu_pct=psutil.cpu_percent(interval=None), ram_pct=psutil.virtual_memory().percent)
+    except Exception:
+        pass
+    return stats

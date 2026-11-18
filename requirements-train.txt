@@ -4,3 +4,4 @@
 stable-baselines3>=2.4,<3
 pyyaml
 tensorboard
+psutil

@@ -1,0 +1,68 @@
+# Corrida larga ambiciosa (mié-vie, sesiones de ~12 h con reanudación automática en Drive). GPU recomendada.
+# - Los stages suman ~26M pasos como TECHO; el límite real lo marcan las horas. Tras calibrar con
+#   `python -m training.benchmark`, ajuste: pasos_totales ≈ sps_estable * 3600 * horas_disponibles.
+# - Las sesiones salen limpias a las 11.5 h y se retoman dando Run all de nuevo (misma celda, mismo nombre).
+# - utd/batch son PROVISIONALES: SAC estándar (UTD 1) dio ~98 sps en una L4; ver el benchmark antes de fijarlos.
+# - Los últimos stages entrenan con pistas COMPLETAS (240 m / 6000 pasos), como en la evaluación real.
+# - Red mayor y batch grande: la GPU lo absorbe; UTD=1 con actualizaciones en ráfagas (train_freq 8).
+extends: base.yaml
+algo: SAC
+time_limit_hours: 11.5
+utd: 0.5               # actualizaciones por transición; calcula gradient_steps según n_envs y train_freq
+algo_kwargs:
+  learning_rate: 0.0003
+  buffer_size: 2000000
+  batch_size: 1024
+  gamma: 0.99
+  tau: 0.005
+  train_freq: 8        # ráfagas de 8 pasos de todos los entornos (menos ir y venir CPU<->GPU)
+  learning_starts: 20000
+  ent_coef: auto
+  policy_kwargs:
+    net_arch: [400, 300]
+
+stages:
+  - name: base
+    timesteps: 500000
+    envs:
+      - {profile: plano, length: 50, max_steps: 1500}
+      - {profile: suave, length: 50, max_steps: 1500}
+  - name: obstaculos
+    timesteps: 2000000
+    envs:
+      - {profile: suave,      length: 60, max_steps: 1800}
+      - {profile: pendientes, length: 60, max_steps: 1800}
+      - {profile: escalones,  length: 60, max_steps: 1800}
+      - {profile: bloques,    length: 60, max_steps: 1800}
+      - {profile: huecos,     length: 60, max_steps: 1800}
+  - name: maraton
+    timesteps: 4000000
+    envs:
+      - {profile: mixto,   length: 80,  max_steps: 2400}
+      - {profile: maraton, length: 120, max_steps: 3000, weight: 3}
+  - name: hardcore
+    timesteps: 8000000
+    envs:
+      - {profile: maraton, difficulty: hardcore,      length: 120, max_steps: 3000}
+      - {profile: maraton, difficulty: hardcore-plus, length: 120, max_steps: 3000}
+      - {profile: maraton, length: 240, max_steps: 6000}
+  - name: completo
+    timesteps: 12000000
+    envs:   # pistas completas, como en la evaluación
+      - {profile: maraton, difficulty: hardcore-plus, length: 240, max_steps: 6000, weight: 3}
+      - {profile: maraton, difficulty: hardcore,      length: 240, max_steps: 6000, weight: 2}
+      - {profile: maraton, length: 240, max_steps: 6000}
+
+eval:
+  every_steps: 250000
+  progress_every: 20000
+  select_on: [validacion, hardcore]
+  suites:
+    practica:   [escenarios/practica/*.json]
+    validacion: [escenarios/validacion/*.json]
+    hardcore:   [escenarios/hardcore/*.json]
+
+checkpoint:
+  every_steps: 250000
+  keep: 3
+  save_replay_buffer: true
