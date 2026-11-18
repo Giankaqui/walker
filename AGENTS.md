@@ -18,7 +18,7 @@ walker_lab/ escenarios/ evaluar.py visualizar.py reproducir.py generar_escenario
 requirements.txt README.md          ← MATERIAL DEL PROFESOR: SOLO LECTURA
 agente/            ← ENTREGA: agent.py + architecture.py (fijos) y policy.pt + meta.json (los genera training.export)
 training/          ← pipeline propio (ver abajo)
-configs/           ← YAML de experimentos (base.yaml, sac_max, sac_curriculum, sac_cpu, ppo_curriculum, smoke*)
+configs/           ← YAML de experimentos (base.yaml · sac_max = principal · ppo_curriculum = alternativa · sac_curriculum = base de smoke · smoke*)
 notebooks/train_cloud.ipynb   ← lanzador fino para Colab/Kaggle
 PIPELINE.md        ← guía de uso detallada (paso a paso, métricas, resistencia a fallos)
 runs/<nombre>/     ← resultados (git los ignora; en Colab viven en Drive)
@@ -29,6 +29,7 @@ runs/<nombre>/     ← resultados (git los ignora; en Colab viven en Drive)
 **El código vive en el repo; el notebook solo lo lanza.** Iterar = editar `.py`/YAML → commit/push → `Run all` en la nube. Ninguna lógica nueva va dentro del notebook. Los hiperparámetros se cambian por YAML o por `--set` / `OVERRIDES`, no editando código.
 
 ## 4. Políticas (obligatorias)
+0. **Mantener simple.** Antes de añadir un archivo, config, herramienta o variable, preguntarse si basta con un `--set`/`OVERRIDES`. Preferir borrar a acumular. Una sola forma de hacer cada cosa; documentación solo en `AGENTS.md` (política) y `PIPELINE.md` (uso).
 1. **No modificar el material del profesor** (`walker_lab/`, `escenarios/`, `evaluar.py`, etc.). Todo lo nuestro va en `training/`, `configs/`, `agente/` (solo `policy.pt`, `meta.json`), `notebooks/`.
 2. **Selección del mejor modelo = criterio del ranking del curso** (`training/callbacks.py::rank_key`), nunca solo distancia. Se evalúa con la política determinista **exacta que se entrega** (`MLPPolicy`), no con la de SB3.
 3. **Mediciones antes que estimaciones.** No afirmar velocidades, tiempos o mejoras sin medirlas (`training.benchmark`, `training.report`, `metrics.jsonl`). Marcar explícitamente lo no medido. Dar proyecciones solo a partir de `sps` real.

@@ -11,6 +11,13 @@
 6. Tras ~1 h, mira la celda 5 (reporte): velocidad real, ETA y evaluaciones.
 7. Al terminar, la celda 4 verifica con `evaluar.py` y baja `agente.zip`.
 
+**Dónde ver la ejecución:** en la **salida de la celda 3** del propio notebook (se actualiza sola, una línea cada 20 000 pasos). Cómo leerla:
+`[ 120,000/26,500,000 | 98 sps | 2/5 obstaculos] dist=14.2 meta=0% | sim 15% upd 85% | 10.2 ms/upd | ETA 74 h`
+- `sps` = pasos por segundo (lo que manda). `ETA` = horas que faltan de TODOS los stages a esa velocidad (el techo de pasos es mayor que lo que alcanzarás; no te asustes).
+- `dist` / `meta` = distancia media y % de llegadas en entrenamiento.
+- `EVAL @ …  validacion: meta 2/5 t=95s …  << NUEVO MEJOR` = prueba real con las pistas oficiales, cada 250 000 pasos. **Esto es lo que importa**: llegadas a meta (n/N) y tiempo.
+- Kaggle: igual, pero si usas *Save Version → Run All* la salida se ve en la pestaña **Logs** de esa versión (no en el editor); el agente queda en *Output*.
+
 **Qué hardware elegir:** SAC (`sac_max`) → **L4 + RAM alta**. PPO (`ppo_curriculum`) → **CPU + RAM alta** (la GPU no lo acelera). T4/A100/H100/TPU: no son necesarios para este proyecto.
 **Segunda corrida en paralelo:** otra pestaña/sesión (Colab CPU con PPO, o Kaggle) con `OVERRIDES = ["name=sac_max_s1", "seed=1"]` o `CONFIG = "configs/ppo_curriculum.yaml"`.
 
