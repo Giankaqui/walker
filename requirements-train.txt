@@ -1,0 +1,6 @@
+# Dependencias SOLO de entrenamiento (no se entregan). El simulador sigue fijado en requirements.txt.
+# torch ya viene instalado en Colab y Kaggle; en local instálelo aparte (CPU o CUDA según su equipo).
+-r requirements.txt
+stable-baselines3>=2.4,<3
+pyyaml
+tensorboard

@@ -1,0 +1,49 @@
+# Pipeline de entrenamiento · Lab 4
+
+Idea: **el código vive en el repo; el notebook de la nube solo lo lanza.** Iterar = editar `.py`/YAML → `git push` → *Run all*.
+
+```
+lab4/
+├─ walker_lab/ escenarios/ evaluar.py …   ← material del profesor (NO se edita)
+├─ training/                              ← nuestro pipeline
+│   ├─ train.py        orquesta: YAML → curriculum → entrenar → eval → checkpoint → export
+│   ├─ envs.py         mezcla de perfiles por episodio (+ VecNormalize opcional)
+│   ├─ callbacks.py    eval periódica sobre pistas reales, best/last, progreso, límite de tiempo
+│   ├─ checkpoints.py  modelo + replay buffer + normalización (reanudable)
+│   ├─ export.py       política SB3 → MLPPolicy (verifica que da las mismas acciones) → policy.pt
+│   ├─ config.py       YAML con `extends` y `--set clave=valor`
+│   └─ runtime.py      detecta Colab/Kaggle/local y dónde guardar los runs
+├─ configs/            base.yaml (curriculum + eval) · sac_curriculum.yaml · ppo_curriculum.yaml · smoke.yaml
+├─ notebooks/train_cloud.ipynb            ← 4 celdas, idéntico en Colab y Kaggle
+├─ agente/                                ← ENTREGA (no cambia entre experimentos, salvo policy.pt)
+│   ├─ agent.py  architecture.py          adaptador + MLP en PyTorch puro (API estable, sin TorchScript)
+│   └─ policy.pt  meta.json               pesos + normalización (los genera training.export)
+└─ runs/<nombre>/      (ignorado por git)
+    ├─ config.resolved.yaml  meta.json    reproducibilidad (config final + commit + versiones)
+    ├─ logs/ (csv + tensorboard)  eval_history.jsonl
+    ├─ ckpt/                              reanudación
+    └─ best_agent/  last_agent/           policy.pt + meta.json
+```
+
+## Flujo diario
+
+| Quiero… | Hago |
+|---|---|
+| Probar que todo funciona | `python -m training.train --config configs/smoke.yaml --fresh` |
+| Un experimento nuevo | copiar un YAML en `configs/` (hereda con `extends`), cambiar lo que difiere |
+| Cambiar un hiperparámetro sin editar archivos | `--set algo_kwargs.learning_rate=0.0001` (o `OVERRIDES` en el notebook) |
+| Cambiar de algoritmo | `configs/ppo_curriculum.yaml` (SAC/TD3/PPO soportados) |
+| Seguir donde quedó (sesión cortada) | volver a ejecutar lo mismo: detecta `ckpt/` y reanuda |
+| Afinar desde el mejor de otro run | `init_from: sac_v1` |
+| Entregar | `python -m training.export runs/<nombre> --to agente` y luego `python evaluar.py` |
+
+## Qué se mide
+Cada `eval.every_steps` se evalúan **las pistas oficiales** (`practica/`, `validacion/`, `hardcore/`) con la política determinista; se guarda como *best* la de mayor **distancia media** en `eval.select_on` (por defecto `validacion`, la métrica del laboratorio). La política evaluada es **exactamente el `policy.pt` que se entrega** (red + normalización).
+
+## Notas
+- Verificado en local (SAC y PPO+normalización): el `evaluar.py` oficial reproduce la distancia medida durante el entrenamiento.
+- Colab/Kaggle traen `torch`; `agente/requirements.txt` lista lo que añade la entrega (fijar la versión usada, ver `meta.json`).
+- SAC con `gradient_steps: -1` hace 1 actualización por transición (lo más eficiente en muestras, pero lento en reloj). Con poco tiempo, `gradient_steps: 1` y más `n_envs` sube mucho los pasos/segundo.
+- Hiperparámetros por algoritmo viven en cada config (los dicts se fusionan al heredar). `suites: {hardcore: null}` desactiva una suite heredada.
+- Reanudar sin replay buffer (`checkpoint.save_replay_buffer: false`) es válido, pero el buffer empieza vacío.
+- Las duraciones/pasos de `base.yaml` son un punto de partida razonable, no un resultado medido: ajustar según la curva de `eval_history.jsonl`.

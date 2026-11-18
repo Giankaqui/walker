@@ -1,0 +1,52 @@
+# Parte común a todos los experimentos. Cada config la hereda con `extends: base.yaml` y añade
+# `algo` + `algo_kwargs` (los dicts se fusionan, por eso los hiperparámetros viven en cada config).
+name: null            # null -> nombre del archivo; el run vive en <runs_root>/<name>/
+seed: 0
+device: auto          # auto | cpu | cuda
+n_envs: auto          # auto -> min(CPUs, 8). Colab ~2, Kaggle ~4.
+normalize_obs: false  # true para PPO (VecNormalize); la normalización queda dentro de policy.pt
+time_limit_hours: null  # corta limpiamente (guarda y exporta) p.ej. 11 para sesiones de Kaggle
+init_from: null       # p.ej. "sac_v1" -> arranca desde runs/sac_v1/best/model.zip (fine-tuning)
+
+# Curriculum: se ejecutan en orden. `envs` es una mezcla sorteada por episodio (weight opcional).
+# length (m) y max_steps acortan las pistas para entrenar más rápido; la evaluación usa las pistas completas.
+stages:
+  - name: base
+    timesteps: 300000
+    envs:
+      - {profile: plano,  length: 50, max_steps: 1500}
+      - {profile: suave,  length: 50, max_steps: 1500}
+  - name: obstaculos
+    timesteps: 700000
+    envs:
+      - {profile: suave,      length: 60, max_steps: 1800}
+      - {profile: pendientes, length: 60, max_steps: 1800}
+      - {profile: escalones,  length: 60, max_steps: 1800}
+      - {profile: bloques,    length: 60, max_steps: 1800}
+      - {profile: huecos,     length: 60, max_steps: 1800}
+  - name: maraton
+    timesteps: 1000000
+    envs:
+      - {profile: mixto,   length: 80,  max_steps: 2400}
+      - {profile: maraton, length: 120, max_steps: 3000, weight: 2}
+  - name: hardcore
+    timesteps: 2000000
+    envs:
+      - {profile: maraton, difficulty: hardcore,      length: 120, max_steps: 3000}
+      - {profile: maraton, difficulty: hardcore-plus, length: 120, max_steps: 3000}
+      - {profile: maraton, length: 120, max_steps: 3000}
+
+# Evaluación periódica con las pistas oficiales. El mejor modelo se elige por `select_on`.
+eval:
+  every_steps: 100000
+  progress_every: 10000
+  select_on: validacion
+  suites:
+    practica:   [escenarios/practica/*.json]
+    validacion: [escenarios/validacion/*.json]
+    hardcore:   [escenarios/hardcore/*.json]
+
+checkpoint:
+  every_steps: 100000
+  keep: 2
+  save_replay_buffer: true   # false = checkpoints ligeros, pero al reanudar el buffer empieza vacío

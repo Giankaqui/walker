@@ -1,0 +1,29 @@
+# Prueba de humo de PPO + VecNormalize (verifica que la normalización quede dentro de policy.pt).
+extends: base.yaml
+algo: PPO
+normalize_obs: true
+n_envs: 2
+algo_kwargs:
+  n_steps: 256
+  batch_size: 128
+  n_epochs: 2
+  policy_kwargs:
+    net_arch: {pi: [64, 64], vf: [64, 64]}
+stages:
+  - name: a
+    timesteps: 1024
+    envs: [{profile: plano, length: 30, max_steps: 400}]
+  - name: b
+    timesteps: 1024
+    envs: [{profile: bloques, length: 30, max_steps: 400}]
+eval:
+  every_steps: 1024
+  progress_every: 512
+  select_on: validacion
+  suites:
+    practica: [escenarios/practica/plano.json]
+    validacion: [escenarios/validacion/maraton_01.json]
+    hardcore: null
+checkpoint:
+  every_steps: 1024
+  keep: 2

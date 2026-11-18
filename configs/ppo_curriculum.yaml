@@ -1,0 +1,15 @@
+# Alternativa on-policy. PPO necesita normalizar observaciones y más pasos por el mismo rendimiento.
+extends: base.yaml
+algo: PPO
+normalize_obs: true
+algo_kwargs:
+  learning_rate: 0.0003
+  n_steps: 1024
+  batch_size: 256
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.0
+  policy_kwargs:
+    net_arch: {pi: [256, 256], vf: [256, 256]}

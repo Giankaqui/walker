@@ -1,0 +1,28 @@
+# Prueba de humo (~2-4 min en CPU): verifica entrenar -> evaluar -> exportar -> reanudar. No busca buen rendimiento.
+extends: sac_curriculum.yaml
+n_envs: 2
+algo_kwargs:
+  learning_starts: 500
+  buffer_size: 50000
+  batch_size: 64
+  gradient_steps: 1
+stages:
+  - name: a
+    timesteps: 2000
+    envs: [{profile: plano, length: 30, max_steps: 400}]
+  - name: b
+    timesteps: 2000
+    envs:
+      - {profile: bloques, length: 30, max_steps: 400}
+      - {profile: huecos, length: 30, max_steps: 400}
+eval:
+  every_steps: 2000
+  progress_every: 1000
+  select_on: validacion
+  suites:
+    practica: [escenarios/practica/plano.json, escenarios/practica/suave.json]
+    validacion: [escenarios/validacion/maraton_01.json]
+    hardcore: null   # desactiva la suite heredada de base.yaml
+checkpoint:
+  every_steps: 2000
+  keep: 2

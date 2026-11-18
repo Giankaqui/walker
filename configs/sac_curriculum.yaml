@@ -1,0 +1,15 @@
+# Experimento principal: SAC + curriculum plano -> obstáculos -> maratón -> hardcore.
+extends: base.yaml
+algo: SAC
+algo_kwargs:           # se pasan tal cual a stable-baselines3
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  batch_size: 512
+  gamma: 0.99
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: -1   # -1 = tantos pasos de gradiente como transiciones recogidas (UTD=1)
+  learning_starts: 10000
+  ent_coef: auto
+  policy_kwargs:
+    net_arch: [256, 256]
