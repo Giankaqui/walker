@@ -1,0 +1,17 @@
+# SAC para CPU (Colab/Kaggle sin GPU): ~2.3x más pasos/s que sac_curriculum (medido en local, UTD 0.5 vs 1).
+# Aprende algo menos por muestra, pero en el mismo tiempo ve muchas más. Con GPU use sac_curriculum.yaml.
+extends: base.yaml
+algo: SAC
+device: cpu
+algo_kwargs:
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: 1    # con n_envs=2 -> 1 actualización cada 2 transiciones (UTD 0.5)
+  learning_starts: 10000
+  ent_coef: auto
+  policy_kwargs:
+    net_arch: [256, 256]
