@@ -2,17 +2,18 @@
 # - Los stages suman ~26M pasos como TECHO; el límite real lo marcan las horas. Tras calibrar con
 #   `python -m training.benchmark`, ajuste: pasos_totales ≈ sps_estable * 3600 * horas_disponibles.
 # - Las sesiones salen limpias a las 11.5 h y se retoman dando Run all de nuevo (misma celda, mismo nombre).
-# - utd/batch son PROVISIONALES: SAC estándar (UTD 1) dio ~98 sps en una L4; ver el benchmark antes de fijarlos.
+# - utd/batch MEDIDOS (Kaggle T4, 4 CPUs): UTD1/b512 = 98 sps; UTD.25/b2048 = 334 sps; UTD.125/b4096 = 534 sps.
+#   Variante agresiva (segunda corrida): --set utd=0.125 --set algo_kwargs.batch_size=4096
 # - Los últimos stages entrenan con pistas COMPLETAS (240 m / 6000 pasos), como en la evaluación real.
 # - Red mayor y batch grande: la GPU lo absorbe; UTD=1 con actualizaciones en ráfagas (train_freq 8).
 extends: base.yaml
 algo: SAC
 time_limit_hours: 11.5
-utd: 0.5               # actualizaciones por transición; calcula gradient_steps según n_envs y train_freq
+utd: 0.25              # actualizaciones por transición; calcula gradient_steps según n_envs y train_freq
 algo_kwargs:
   learning_rate: 0.0003
   buffer_size: 2000000
-  batch_size: 1024
+  batch_size: 2048       # UTD x batch = 512: mismo reuso de datos que SAC estándar, 3.4x más sps (medido en T4)
   gamma: 0.99
   tau: 0.005
   train_freq: 8        # ráfagas de 8 pasos de todos los entornos (menos ir y venir CPU<->GPU)
@@ -54,7 +55,7 @@ stages:
       - {profile: maraton, length: 240, max_steps: 6000}
 
 eval:
-  every_steps: 250000
+  every_steps: 500000   # cada evaluación completa cuesta minutos con pistas de 6000 pasos
   progress_every: 20000
   select_on: [validacion, hardcore]
   suites:
