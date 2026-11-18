@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -89,3 +91,54 @@ def system_stats() -> dict:
     except Exception:
         pass
     return stats
+
+
+class GpuSampler:
+    """Utilización media de la GPU en una ventana, muestreada en segundo plano.
+
+    Una lectura puntual engaña: la GPU solo trabaja en la fase de actualización, no mientras se recolecta.
+    Ojo: NVML mide "% del tiempo con algún kernel activo", no cuánto cómputo usa; con kernels diminutos puede dar
+    alto sin estar saturada. La prueba decisiva es comparar ms/actualización entre dos GPUs.
+    """
+
+    def __init__(self, interval: float = 1.0):
+        self._vals: list[float] = []
+        self._lock = threading.Lock()
+        self._read = self._make_reader()
+        self.interval = interval if self._read is not None and not hasattr(self._read, "smi") else max(interval, 2.0)
+        if self._read is not None:
+            threading.Thread(target=self._loop, daemon=True).start()
+
+    @staticmethod
+    def _make_reader():
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            return lambda: float(pynvml.nvmlDeviceGetUtilizationRates(handle).gpu)
+        except Exception:
+            pass
+        if shutil.which("nvidia-smi"):
+            def smi() -> float:
+                out = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                                     capture_output=True, text=True, timeout=5).stdout
+                return float(out.strip().splitlines()[0])
+            smi.smi = True
+            return smi
+        return None
+
+    def _loop(self) -> None:
+        import time
+        while True:
+            try:
+                value = self._read()
+                with self._lock:
+                    self._vals.append(value)
+            except Exception:
+                pass
+            time.sleep(self.interval)
+
+    def mean_and_reset(self) -> float | None:
+        with self._lock:
+            vals, self._vals = self._vals, []
+        return round(sum(vals) / len(vals), 1) if vals else None

@@ -17,7 +17,7 @@ import torch
 from .callbacks import ProgressCallback, Timers
 from .config import load_config
 from .envs import build_vec_env
-from .runtime import REPO_ROOT, default_n_envs, environment_info, system_stats
+from .runtime import REPO_ROOT, GpuSampler, default_n_envs, environment_info
 from .train import build_model
 
 # (nombre, utd, batch, net_arch, train_freq): UTD = actualizaciones de gradiente por transición recogida
@@ -44,11 +44,13 @@ def run_variant(cfg: dict, name: str, utd: float, batch: int, net: list[int], tr
         model = build_model(cfg, venv, device, n_envs)
         model.learn(2500)  # calentamiento: llena el buffer (sin actualizaciones)
         timers, upd0 = Timers(), getattr(model, "_n_updates", 0)
+        sampler = GpuSampler(interval=0.5)
+        sampler.mean_and_reset()
         cb = ProgressCallback(10**12, 10**12, None, lambda: "bench", timers)
         t0 = time.perf_counter()
         model.learn(steps, callback=cb, reset_num_timesteps=False)
         wall = time.perf_counter() - t0
-        gpu = system_stats().get("gpu_util_pct")
+        gpu = sampler.mean_and_reset()  # media durante el entrenamiento, no después
         n_upd = getattr(model, "_n_updates", 0) - upd0
         return {"name": name, "sps": steps / wall, "ms_upd": 1000 * timers.t["update"] / max(n_upd, 1),
                 "sim": 100 * timers.t["collect"] / wall, "upd": 100 * timers.t["update"] / wall,
@@ -73,7 +75,7 @@ def main() -> None:
             r = run_variant(cfg, *variant, steps=args.steps, device=device)
             results.append(r)
             print(f"  {r['name']:34s} {r['sps']:6.0f} sps | {r['ms_upd']:5.1f} ms/upd | sim {r['sim']:3.0f}% "
-                  f"upd {r['upd']:3.0f}% | GPU {r['gpu'] if r['gpu'] is not None else '-'}%", flush=True)
+                  f"upd {r['upd']:3.0f}% | GPU {'-' if r['gpu'] is None else format(r['gpu'], '.0f')}%", flush=True)
     base = results[0]["sps"]
     print(f"\n{'variante':34s} {'sps':>6s} {'x vs 1ª':>8s} {'h por 10M pasos':>16s}")
     for r in results:

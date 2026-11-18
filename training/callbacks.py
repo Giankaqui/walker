@@ -81,6 +81,8 @@ class ProgressCallback(BaseCallback):
         self._rollout_start = self._rollout_end = None
         self._nested_at_start = 0.0
         self._last_snap, self._last_updates = dict(timers.t), 0
+        from .runtime import GpuSampler
+        self.gpu = GpuSampler()
 
     def _on_training_start(self):
         if self._last_step is None:
@@ -127,9 +129,11 @@ class ProgressCallback(BaseCallback):
         keep = ("ent_coef", "critic_loss", "actor_loss", "loss", "value_loss", "policy_gradient_loss", "std")
         losses = {k.split("/")[-1]: round(float(v), 5) for k, v in self.logger.name_to_value.items()
                   if k.startswith("train/") and isinstance(v, (int, float)) and k.split("/")[-1] in keep}
+        gpu_pct = self.gpu.mean_and_reset()
+        gpu_txt = f" | GPU {gpu_pct:3.0f}%" if gpu_pct is not None else ""
         print(f"[{self.num_timesteps:>9,}/{self.total:,} | {sps:5.0f} sps | {self.stage_label()}] "
               f"dist={dist:6.1f} meta={succ:4.0%} | sim {pct['collect']:3.0f}% upd {pct['update']:3.0f}% "
-              f"eval {pct['eval']:2.0f}% | {ms_upd:5.1f} ms/upd | ETA {eta_h:4.1f} h", flush=True)
+              f"eval {pct['eval']:2.0f}% | {ms_upd:5.1f} ms/upd{gpu_txt} | ETA {eta_h:4.1f} h", flush=True)
         if self.metrics_file is not None:
             from .runtime import system_stats
             row = {"ts": round(now), "step": int(self.num_timesteps), "stage": self.stage_label(), "sps": round(sps, 1),
@@ -137,6 +141,7 @@ class ProgressCallback(BaseCallback):
                    "ms_per_update": None if updates == 0 else round(ms_upd, 2), "updates": updates,
                    "utd": round(updates / steps, 3) if steps else None, "train_dist": dist, "train_success": succ,
                    "ep_len": ep_len, "eta_h_total": round(eta_h, 2), "losses": losses, **system_stats()}
+            row["gpu_util_pct"] = gpu_pct  # promedio de la ventana (sustituye a la lectura puntual)
             try:
                 with self.metrics_file.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(row, allow_nan=True) + "\n")

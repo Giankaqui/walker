@@ -4,7 +4,7 @@
 
 **Siempre `Run all`.** Solo cambia `MODE` en la celda 1.
 1. Colab → *Archivo → Abrir cuaderno → GitHub* → `Vasco2510/walker` → `notebooks/train_cloud.ipynb`.
-2. *Entorno de ejecución → Cambiar tipo de entorno*: acelerador **L4 GPU** + **RAM alta** activada → Guardar.
+2. *Entorno de ejecución → Cambiar tipo de entorno*: acelerador **T4 GPU** + **RAM alta** activada → Guardar. (¿T4 o L4? ver más abajo.)
 3. Celda 1: `MODE = "calibrar"` → *Ejecutar todo*. Acepta el acceso a Drive. En ~5 min imprime una tabla de velocidades: cópiala.
 4. Con la tabla se fija `utd`/`batch` en `configs/sac_max.yaml` (commit + push; el notebook siempre descarga lo último).
 5. Celda 1: `MODE = "entrenar"` → *Ejecutar todo*. Deja la pestaña abierta. Si se corta: *Ejecutar todo* otra vez, reanuda solo.
@@ -18,7 +18,9 @@
 - `EVAL @ …  validacion: meta 2/5 t=95s …  << NUEVO MEJOR` = prueba real con las pistas oficiales, cada 250 000 pasos. **Esto es lo que importa**: llegadas a meta (n/N) y tiempo.
 - Kaggle: igual, pero si usas *Save Version → Run All* la salida se ve en la pestaña **Logs** de esa versión (no en el editor); el agente queda en *Output*.
 
-**Qué hardware elegir:** SAC (`sac_max`) → **L4 + RAM alta**. PPO (`ppo_curriculum`) → **CPU + RAM alta** (la GPU no lo acelera). T4/A100/H100/TPU: no son necesarios para este proyecto.
+**Qué hardware elegir:** SAC (`sac_max`) → **T4 + RAM alta**. PPO (`ppo_curriculum`) → **CPU + RAM alta** (la GPU no lo acelera). A100/H100/G4/TPU: no son necesarios.
+
+**¿T4 o L4?** El cuello de botella de SAC es la sobrecarga de cada actualización (Python + lanzar muchos kernels pequeños desde la CPU), no el cómputo de la GPU; por eso una GPU más potente casi no acelera, y la L4 gasta ~1,4× más unidades por hora que la T4 (≈1,71 vs ≈1,19 u/h, medición de mar-2026; ≈62 vs ≈43 u para 36 h). Por defecto **T4**. Se cambia a L4 solo con datos: ejecuta `MODE="calibrar"` en ambas y compara la columna `ms/upd` y `sps` de la misma variante; **usa L4 solo si es ≥1,3× más rápida** y te alcanzan las unidades. (La columna `GPU %` es solo orientativa: mide tiempo con algún kernel activo, no saturación.)
 **Segunda corrida en paralelo:** otra pestaña/sesión (Colab CPU con PPO, o Kaggle) con `OVERRIDES = ["name=sac_max_s1", "seed=1"]` o `CONFIG = "configs/ppo_curriculum.yaml"`.
 
 ---

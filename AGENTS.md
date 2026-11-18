@@ -42,7 +42,7 @@ runs/<nombre>/     ← resultados (git los ignora; en Colab viven en Drive)
 
 ## 5. Cómo se corre (resumen; detalle en PIPELINE.md)
 - **Local (solo humo):** `python -m training.train --config configs/smoke.yaml --fresh` (minutos, CPU). El equipo local es poco potente: **no entrenar en serio ahí**.
-- **Colab Pro (principal):** abrir `notebooks/train_cloud.ipynb` desde GitHub, runtime **L4 + RAM alta** para SAC. Primera vez `MODE="calibrar"` → Run all; luego `MODE="entrenar"` → Run all. Si se corta, Run all otra vez (reanuda).
+- **Colab Pro (principal):** abrir `notebooks/train_cloud.ipynb` desde GitHub, runtime **T4 + RAM alta** para SAC (L4 solo si `MODE="calibrar"` la muestra ≥1,3× más rápida; el cuello de botella no es el cómputo de GPU). Primera vez `MODE="calibrar"` → Run all; luego `MODE="entrenar"` → Run all. Si se corta, Run all otra vez (reanuda).
 - **Paralelo:** otra sesión (Kaggle, o Colab CPU RAM alta con `configs/ppo_curriculum.yaml`) o segunda semilla (`OVERRIDES=["name=sac_max_s1","seed=1"]`). Al final: `python -m training.compare <runs>/* --promote agente`.
 - **Entrega:** `python -m training.export runs/<nombre> --to agente` → `python evaluar.py` → zip de `agente/`.
 
@@ -55,6 +55,7 @@ Entorno de prueba: Python 3.11 + `pip install -r requirements-train.txt` + torch
 5. `--fresh` archiva en vez de borrar.
 
 ## 7. Estado y hechos conocidos
+- **No medido:** T4 vs L4 en este proyecto (decisión por calibración, ver PIPELINE.md).
 - **Medido en Colab L4 (log del usuario, Python 3.13, código antiguo):** SAC estándar (UTD 1, batch 512, 256×256) ≈ **98 sps**. A ese ritmo 26M pasos ≈ 73 h → los 26M de `sac_max` son un **techo**, no un plan; el límite real son las horas (≈36 h de entrenamiento previstas: mié–vie, sesiones de ~12 h).
 - **Medido en local (CPU, equipo débil):** ~85 % del tiempo va a las actualizaciones de SAC, ~15 % al simulador; PPO ≈ 20× más pasos/s que SAC UTD 1 en CPU. **No medido:** efecto real de UTD/batch en GPU (para eso es `training.benchmark`).
 - `utd`/`batch_size` de `configs/sac_max.yaml` son **provisionales** hasta calibrar.
