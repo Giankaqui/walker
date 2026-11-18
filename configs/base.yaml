@@ -36,11 +36,12 @@ stages:
       - {profile: maraton, difficulty: hardcore-plus, length: 120, max_steps: 3000}
       - {profile: maraton, length: 120, max_steps: 3000}
 
-# Evaluación periódica con las pistas oficiales. El mejor modelo se elige por `select_on`.
+# Evaluación periódica con las pistas oficiales. El mejor modelo se elige con el criterio del ranking del curso
+# sobre las suites de `select_on`: 1) más llegadas a meta, 2) menor tiempo medio de las completadas, 3) mayor distancia.
 eval:
   every_steps: 100000
   progress_every: 10000
-  select_on: validacion
+  select_on: [validacion, hardcore]
   suites:
     practica:   [escenarios/practica/*.json]
     validacion: [escenarios/validacion/*.json]

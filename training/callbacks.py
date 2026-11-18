@@ -6,6 +6,7 @@ import glob
 import json
 import pickle
 import time
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +31,8 @@ def run_scenario(policy, scenario_path: str) -> dict:
             obs, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
         return {"scenario": Path(scenario_path).stem, "distance": info["distance"], "length": info["length"],
-                "success": bool(info["success"]), "steps": info["steps"], "reason": info["reason"]}
+                "success": bool(info["success"]), "steps": info["steps"], "time": float(info["simulated_seconds"]),
+                "reason": info["reason"]}
     finally:
         env.close()
 
@@ -82,20 +84,42 @@ class ProgressCallback(BaseCallback):
         return True
 
 
-class DistanceEvalCallback(BaseCallback):
-    """Evalúa la política determinista en suites de pistas fijas; guarda last/best (modelo y agente)."""
+def rank_key(rows: list[dict]) -> tuple:
+    """Criterio del ranking del curso: más llegadas a meta; a igualdad, menor tiempo medio de las
+    carreras completadas; a igualdad, mayor distancia media. Tupla comparable (mayor = mejor)."""
+    done = [r for r in rows if r["success"]]
+    mean_time = float(np.mean([r["time"] for r in done])) if done else 0.0
+    return (len(done), -mean_time, float(np.mean([r["distance"] for r in rows])))
 
-    def __init__(self, run_dir: Path, ctx, suites: dict, select_on: str, every_steps: int, meta: dict):
+
+class DistanceEvalCallback(BaseCallback):
+    """Evalúa la política determinista en suites de pistas fijas; guarda last/best (modelo y agente).
+
+    El 'mejor' se decide con rank_key sobre las pistas de `select_on` (una suite o una lista de suites).
+    Un fallo al evaluar nunca interrumpe el entrenamiento.
+    """
+
+    def __init__(self, run_dir: Path, ctx, suites: dict, select_on, every_steps: int, meta: dict):
         super().__init__()
         self.run_dir, self.ctx, self.every, self.meta = Path(run_dir), ctx, every_steps, meta
         self.suites = resolve_suites(suites)
-        if select_on not in self.suites:
-            raise ValueError(f"eval.select_on='{select_on}' no está en eval.suites {list(self.suites)}")
-        self.select_on = select_on
+        self.select_on = [select_on] if isinstance(select_on, str) else list(select_on)
+        unknown = [s for s in self.select_on if s not in self.suites]
+        if unknown:
+            raise ValueError(f"eval.select_on contiene {unknown}, que no están en eval.suites {list(self.suites)}")
         self.best_file = self.run_dir / "best" / "best.json"
-        self.best = json.loads(self.best_file.read_text())["score"] if self.best_file.is_file() else -np.inf
+        self.best = self._load_best(self.best_file)
         self._last = None
         self.evaluated_at = None
+
+    @staticmethod
+    def _load_best(path: Path) -> tuple:
+        if not path.is_file():
+            return (-1, 0.0, 0.0)
+        data = json.loads(path.read_text())
+        if "key" in data:
+            return tuple(data["key"])
+        return (0, 0.0, float(data.get("score", 0.0)))  # formato antiguo (solo distancia): permite reanudar runs previos
 
     def _on_training_start(self):
         if self._last is None:
@@ -103,38 +127,50 @@ class DistanceEvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last >= self.every:
-            self.evaluate()
+            self.safe_evaluate()
         return True
 
-    def evaluate(self) -> float:
-        self._last = self.num_timesteps
+    def safe_evaluate(self):
+        try:
+            return self.evaluate()
+        except Exception:
+            traceback.print_exc()
+            print("    ⚠ La evaluación falló; el entrenamiento continúa.", flush=True)
+            return None
+
+    def evaluate(self) -> tuple:
+        self._last = self.evaluated_at = self.num_timesteps
         t0 = time.time()
-        self.evaluated_at = self.num_timesteps
-        traced = build_policy(self.model, self.ctx.vn)  # la misma MLPPolicy que se entrega
+        policy = build_policy(self.model, self.ctx.vn)  # la misma MLPPolicy que se entrega
         summary, rows = {}, {}
         for suite, files in self.suites.items():
-            rows[suite] = [run_scenario(traced, f) for f in files]
-            summary[suite] = {"mean_distance": float(np.mean([r["distance"] for r in rows[suite]])),
-                              "success_rate": float(np.mean([r["success"] for r in rows[suite]]))}
-            self.logger.record(f"eval/{suite}_mean_distance", summary[suite]["mean_distance"])
-            self.logger.record(f"eval/{suite}_success_rate", summary[suite]["success_rate"])
-        score = summary[self.select_on]["mean_distance"]
+            rows[suite] = [run_scenario(policy, f) for f in files]
+            done = [r for r in rows[suite] if r["success"]]
+            summary[suite] = {"n": len(rows[suite]), "arrivals": len(done),
+                              "mean_time_arrived": float(np.mean([r["time"] for r in done])) if done else None,
+                              "mean_distance": float(np.mean([r["distance"] for r in rows[suite]]))}
+            for key, value in (("arrivals", len(done)), ("mean_distance", summary[suite]["mean_distance"])):
+                self.logger.record(f"eval/{suite}_{key}", value)
+        key = rank_key([r for s in self.select_on for r in rows[s]])
         step = int(self.num_timesteps)
-        is_best = score > self.best
-        info = {"step": step, "score": score, "select_on": self.select_on, "summary": summary, **self.meta}
-        save_agent(traced, self.run_dir / "last_agent", info)
+        is_best = key > self.best
+        info = {"step": step, "rank_key": list(key), "select_on": self.select_on, "summary": summary, **self.meta}
+        save_agent(policy, self.run_dir / "last_agent", info)
         if is_best:
-            self.best = score
+            self.best = key
             self.model.save(self.run_dir / "best" / "model.zip")
             if self.ctx.vn is not None:
                 (self.run_dir / "best" / "obs_rms.pkl").write_bytes(pickle.dumps(self.ctx.vn.obs_rms))
-            save_agent(traced, self.run_dir / "best_agent", info)
-            self.best_file.write_text(json.dumps({"step": step, "score": score}))
+            save_agent(policy, self.run_dir / "best_agent", info)
+            self.best_file.write_text(json.dumps({"step": step, "key": list(key)}))
         with (self.run_dir / "eval_history.jsonl").open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"step": step, "summary": summary, "rows": rows, "best": is_best}) + "\n")
-        parts = " | ".join(f"{s}: dist={v['mean_distance']:6.1f} ok={v['success_rate']:4.0%}" for s, v in summary.items())
+            f.write(json.dumps({"step": step, "rank_key": list(key), "summary": summary, "rows": rows, "best": is_best}) + "\n")
+        parts = " | ".join(
+            f"{s}: meta {v['arrivals']}/{v['n']}"
+            + (f" t={v['mean_time_arrived']:.0f}s" if v["mean_time_arrived"] is not None else "")
+            + f" dist={v['mean_distance']:.1f}" for s, v in summary.items())
         print(f"    EVAL @ {step:,}  {parts}  {'<< NUEVO MEJOR' if is_best else ''} ({time.time() - t0:.0f}s)", flush=True)
-        return score
+        return key
 
 
 class CheckpointCallback(BaseCallback):
@@ -149,6 +185,6 @@ class CheckpointCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last >= self.every:
-            self.manager.save(self.model, self.ctx.vn)
+            self.manager.try_save(self.model, self.ctx.vn)  # un fallo de disco/Drive no mata el entrenamiento
             self._last = self.num_timesteps
         return True

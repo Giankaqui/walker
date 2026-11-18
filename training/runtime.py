@@ -59,3 +59,15 @@ def environment_info() -> dict:
     except Exception:
         info["cuda"] = None
     return info
+
+
+def persistence_warning(run_dir: Path) -> str | None:
+    """Avisa cuando los resultados viven en disco efímero y se perderían si la sesión muere."""
+    platform = detect_platform()
+    if platform == "colab" and not str(run_dir).startswith("/content/drive"):
+        return ("⚠ ATENCIÓN: Drive no está montado; los runs se guardan en disco temporal y se PIERDEN si la sesión "
+                "se cierra. Monte Drive (celda 2) o fije LAB4_RUNS_DIR.")
+    if platform == "kaggle":
+        return ("ℹ Kaggle solo conserva /kaggle/working al terminar la ejecución con 'Save Version' (Run All). "
+                "Si la sesión se corta antes, se pierde; use time_limit_hours para salir limpio antes del límite.")
+    return None

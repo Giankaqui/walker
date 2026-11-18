@@ -37,8 +37,26 @@ lab4/
 | Afinar desde el mejor de otro run | `init_from: sac_v1` |
 | Entregar | `python -m training.export runs/<nombre> --to agente` y luego `python evaluar.py` |
 
-## Qué se mide
-Cada `eval.every_steps` se evalúan **las pistas oficiales** (`practica/`, `validacion/`, `hardcore/`) con la política determinista; se guarda como *best* la de mayor **distancia media** en `eval.select_on` (por defecto `validacion`, la métrica del laboratorio). La política evaluada es **exactamente el `policy.pt` que se entrega** (red + normalización).
+## Qué se mide (criterio del ranking del curso)
+El profesor evalúa 6 carreras y ordena por: **1) nº de llegadas a meta**, 2) **menor tiempo medio** de las completadas, 3) mayor distancia media. El pipeline elige el *best* con ese mismo orden (`training/callbacks.py::rank_key`) sobre las suites de `eval.select_on` (por defecto `validacion` + `hardcore`). Se desconoce de qué pistas saldrán las 6 carreras: si lo averiguan, ajusten `select_on`.
+La política evaluada es **exactamente el `policy.pt` que se entrega** (red + normalización).
+
+## Resistencia a fallos (todo probado con fallos reales, ver tabla)
+| Fallo | Qué pasa | Probado |
+|---|---|---|
+| Sesión muere / `kill -9` a mitad de entrenamiento | Se vuelve a ejecutar lo mismo y retoma del último checkpoint (modelo + replay buffer + normalización) | ✅ taskkill /F a mitad de run |
+| Checkpoint más reciente corrupto (VM muere escribiendo en Drive) | Cae al anterior (se conservan 2) y avisa | ✅ archivo truncado |
+| Replay buffer ilegible | Sigue con buffer vacío en vez de abortar | código |
+| Falla la evaluación o el guardado (Drive caído, disco lleno) | Avisa y el entrenamiento continúa | ✅ fallos inyectados |
+| `SIGTERM` / Ctrl+C | Guarda checkpoint antes de salir | código |
+| `--fresh` / `FRESH=True` olvidado | Archiva el run anterior (`nombre.old-fecha`), no lo borra | ✅ |
+| Cortes por límite de sesión | `time_limit_hours` sale limpio antes del límite | código |
+| Print con símbolos en consola cp1252 | No tumba el entrenamiento | ✅ (bug encontrado y corregido) |
+
+**No cubre:** reiniciar la sesión automáticamente (hay que dar Run all de nuevo); Colab sin Drive montado (avisa, pero los datos son efímeros); Kaggle solo conserva `/kaggle/working` al terminar con *Save Version*.
+
+## GPU
+Cuello de botella = simulador Box2D (1 núcleo por entorno, ~5k pasos/s) y, en SAC, las actualizaciones de la red (MLP de 256x256, <1 GB de VRAM, 1 GPU cualquiera basta; una más grande no acelera). PPO va igual o mejor en CPU (el pipeline lo fuerza). Mida los `sps` reales en la línea de progreso del entrenamiento.
 
 ## Notas
 - Verificado en local (SAC y PPO+normalización): el `evaluar.py` oficial reproduce la distancia medida durante el entrenamiento.
