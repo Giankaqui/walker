@@ -12,6 +12,33 @@ from walker_lab.environment import WalkerEnv
 ENV_KEYS = ("profile", "difficulty", "length", "max_steps")
 
 
+class _RewardShaping(gym.Wrapper):
+    """Reescala la recompensa SOLO para el entrenamiento (nunca se usa en evaluar.py).
+
+    Referencia: FORK (Yu Wang et al., arXiv:2010.01652) encontró que en BipedalWalkerHardcore la
+    penalización de caída (-100, muy por encima de las recompensas por paso) vuelve a SAC/TD3
+    demasiado conservador; reduce la caída y escala el resto para que el riesgo de intentar un
+    obstáculo difícil valga la pena frente a jugar seguro. No cambia obs ni action, solo el escalar
+    de recompensa que ve el algoritmo durante el entrenamiento.
+    """
+
+    def __init__(self, env: gym.Env, fall_penalty: float, scale: float):
+        super().__init__(env)
+        self.fall_penalty, self.scale = float(fall_penalty), float(scale)
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        reward = -self.fall_penalty if info.get("reason") == "fall" else reward * self.scale
+        return obs, reward, terminated, truncated, info
+
+
+def _build_track_env(spec: dict, reward_shaping: dict | None) -> gym.Env:
+    env = WalkerEnv(**{k: spec[k] for k in ENV_KEYS if k in spec})
+    if reward_shaping:
+        env = _RewardShaping(env, reward_shaping["fall_penalty"], reward_shaping["scale"])
+    return env
+
+
 class MixedWalkerEnv(gym.Env):
     """Cada episodio sortea uno de varios WalkerEnv (perfil/dificultad/longitud) según `weight`.
 
@@ -20,9 +47,9 @@ class MixedWalkerEnv(gym.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, specs: list[dict], seed: int = 0):
+    def __init__(self, specs: list[dict], seed: int = 0, reward_shaping: dict | None = None):
         super().__init__()
-        self.envs = [WalkerEnv(**{k: s[k] for k in ENV_KEYS if k in s}) for s in specs]
+        self.envs = [_build_track_env(s, reward_shaping) for s in specs]
         weights = np.array([float(s.get("weight", 1.0)) for s in specs])
         self.p = weights / weights.sum()
         self.observation_space = self.envs[0].observation_space
@@ -46,14 +73,15 @@ class MixedWalkerEnv(gym.Env):
             env.close()
 
 
-def _factory(specs: list[dict], seed: int):
+def _factory(specs: list[dict], seed: int, reward_shaping: dict | None):
     def _init():
-        return Monitor(MixedWalkerEnv(specs, seed), info_keywords=("distance", "success"))
+        return Monitor(MixedWalkerEnv(specs, seed, reward_shaping), info_keywords=("distance", "success"))
     return _init
 
 
-def build_vec_env(specs: list[dict], n_envs: int, seed: int, normalize: bool = False, obs_rms=None):
-    fns = [_factory(specs, seed + i) for i in range(n_envs)]
+def build_vec_env(specs: list[dict], n_envs: int, seed: int, normalize: bool = False, obs_rms=None,
+                   reward_shaping: dict | None = None):
+    fns = [_factory(specs, seed + i, reward_shaping) for i in range(n_envs)]
     venv = SubprocVecEnv(fns) if n_envs > 1 else DummyVecEnv(fns)
     venv.seed(seed)
     if normalize:

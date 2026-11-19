@@ -1,0 +1,48 @@
+{
+  "step": 6535776,
+  "rank_key": [
+    6,
+    -43.690000000000005,
+    220.3681126912435
+  ],
+  "select_on": [
+    "validacion",
+    "hardcore"
+  ],
+  "summary": {
+    "practica": {
+      "n": 7,
+      "arrivals": 7,
+      "mean_time_arrived": 11.602857142857143,
+      "mean_distance": 60.0
+    },
+    "validacion": {
+      "n": 5,
+      "arrivals": 5,
+      "mean_time_arrived": 42.55200000000001,
+      "mean_distance": 240.0
+    },
+    "hardcore": {
+      "n": 5,
+      "arrivals": 1,
+      "mean_time_arrived": 49.38,
+      "mean_distance": 200.736225382487
+    }
+  },
+  "name": "sac_max",
+  "algo": "SAC",
+  "git": {
+    "commit": "1aff18c",
+    "dirty": true
+  },
+  "env": {
+    "platform": "local",
+    "python": "3.12.3",
+    "cpus": 24,
+    "torch": "2.15.0+cu132",
+    "stable_baselines3": "2.9.2",
+    "gymnasium": "1.2.3",
+    "numpy": "2.2.6",
+    "cuda": "NVIDIA RTX PRO 4000 Blackwell"
+  }
+}

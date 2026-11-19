@@ -56,7 +56,11 @@ def build_model(cfg: dict, venv, device: str, n_envs: int):
     if cfg.get("init_from"):  # arranque en caliente desde el mejor modelo de otro experimento
         src = _init_dir(cfg)
         print(f"Inicializando desde {src / 'best' / 'model.zip'}", flush=True)
-        return cls.load(src / "best" / "model.zip", env=venv, device=device)
+        # SB3 conserva los hiperparámetros guardados en el zip: se sobrescriben los que tiene sentido cambiar al afinar.
+        custom = {k: kwargs[k] for k in ("learning_rate", "ent_coef", "target_kl", "clip_range", "n_epochs") if k in kwargs}
+        custom["seed"] = cfg["seed"]  # si no, _setup_model resiembra el entorno con la semilla guardada en el zip
+        print(f"  hiperparámetros sobrescritos: {custom}", flush=True)
+        return cls.load(src / "best" / "model.zip", env=venv, device=device, custom_objects=custom)
     return cls("MlpPolicy", venv, seed=cfg["seed"], device=device, verbose=0, policy_kwargs=policy_kwargs, **kwargs)
 
 
@@ -120,7 +124,8 @@ def run(cfg: dict, run_dir: Path, fresh: bool) -> None:
     obs_rms = state["obs_rms"] if state else None
     if normalize and not state and cfg.get("init_from"):  # heredar normalización del run de origen
         obs_rms = pickle.loads((_init_dir(cfg) / "best" / "obs_rms.pkl").read_bytes())
-    venv = ctx.vn = build_vec_env(stages[stage_idx]["envs"], n_envs, cfg["seed"], normalize, obs_rms)
+    venv = ctx.vn = build_vec_env(stages[stage_idx]["envs"], n_envs, cfg["seed"], normalize, obs_rms,
+                                   reward_shaping=cfg.get("reward_shaping"))
     if not normalize:
         ctx.vn = None
     if state:
@@ -150,7 +155,8 @@ def run(cfg: dict, run_dir: Path, fresh: bool) -> None:
             if i > stage_idx:  # nuevo stage: nuevo VecEnv, mismas estadísticas de normalización
                 rms = ctx.vn.obs_rms if ctx.vn is not None else None
                 venv.close()
-                venv = build_vec_env(stages[i]["envs"], n_envs, cfg["seed"] + 1000 * i, normalize, rms)
+                venv = build_vec_env(stages[i]["envs"], n_envs, cfg["seed"] + 1000 * i, normalize, rms,
+                                      reward_shaping=cfg.get("reward_shaping"))
                 ctx.vn = venv if normalize else None
                 model.set_env(venv)
             print(f"=== Stage {i + 1}/{len(stages)} '{stages[i].get('name', '')}' hasta {ends[i]:,} pasos ===", flush=True)
