@@ -1,0 +1,19 @@
+# Desde soupit2, mezcla con énfasis en bloques altos (pistas propias obst_var/bloques_var de escala continua).
+extends: ppo_ft_hard.yaml
+name: ppo_it3_blq
+seed: 62
+n_envs: 4
+init_from: init_soupit2   # <runs>/init_soupit2/best/{model.zip,obs_rms.pkl} (ver PIPELINE.md, «Ruta PPO local»)
+algo_kwargs:
+  learning_rate: 0.00003
+  target_kl: 0.01
+stages:
+  - name: afinado_bloques
+    timesteps: 81524948
+    envs:
+      - {profile: maraton,     difficulty: hardcore-plus, length: 240, max_steps: 6000, weight: 3}
+      - {profile: maraton,     difficulty: hardcore,      length: 240, max_steps: 6000, weight: 3}
+      - {profile: maraton,     length: 240, max_steps: 6000, weight: 1}
+      - {profile: obst_var,    length: 60, max_steps: 1800, weight: 3}
+      - {profile: bloques_var, length: 40, max_steps: 1200, weight: 2}
+      - {profile: huecos,      difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 1}

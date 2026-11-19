@@ -1,0 +1,9 @@
+# Soup iterado: afinado corto desde el soup entregado (actor+crítico promediados), otra semilla, lr bajo.
+extends: ppo_ft_hard.yaml
+name: ppo_ft_soup2
+seed: 52
+n_envs: 5
+init_from: init_soup   # <runs>/init_soup/best/{model.zip,obs_rms.pkl} (ver PIPELINE.md, «Ruta PPO local»)
+algo_kwargs:
+  learning_rate: 0.00003
+  target_kl: 0.01

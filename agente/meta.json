@@ -1,0 +1,13 @@
+{
+  "modelo": "PPO (stable-baselines3) exportado a MLP en PyTorch puro (24-256-256-4, tanh); normalización de observaciones incluida en policy.pt (obs_mean/obs_var)",
+  "origen": "run ppo_v2d (gamma 0.995, target_kl 0.03, batch 2048, curriculum) hasta 31.5M pasos; afinado hardcore y soups iterados (soup -> afinado -> soup). Última vuelta: 3 ramas de afinado desde el soup anterior (misma mezcla; énfasis en bloques altos con pistas de entrenamiento propias, lr 3e-5 y 6e-5) y soup de 15 checkpoints (5 por rama, 6-10M pasos de afinado)",
+  "inferencia": "determinista + anti-atasco en agent.py: si |vel. horizontal| < 0.02 durante 100 pasos, ruido N(0, 0.3) en las acciones durante 30 pasos (RNG con semilla fija reiniciada en reset())",
+  "seleccion": "Pistas maratón nuevas x 6 semillas (evaluación propia que reproduce al Evaluator oficial). Elegido en 4 sets (1680 carreras): 658 llegadas vs 602 del modelo anterior. Confirmado en 5 sets no usados para elegir (3000 carreras): 1084 vs 944; hardcore+hardcore-plus 722/2400 vs 567/2400; normal 362/600 vs 377/600. Tiempo medio de llegada ~55 s",
+  "entorno_entrenamiento": {
+    "python": "3.12",
+    "torch": "2.15.0",
+    "stable_baselines3": "2.9.2",
+    "gymnasium": "1.2.3",
+    "numpy": "2.2.6"
+  }
+}

@@ -1,0 +1,16 @@
+# PPO v2: actualizaciones acotadas (target_kl), minibatch grande, algo de entropía. A/B en gamma.
+extends: ppo_largo.yaml
+name: ppo_v2b
+seed: 2
+n_envs: 6
+time_limit_hours: 30
+algo_kwargs:
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 2048
+  n_epochs: 10
+  gamma: 0.995
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.001
+  target_kl: 0.03

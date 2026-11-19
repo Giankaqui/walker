@@ -1,0 +1,44 @@
+# PPO largo para Mac M4 Pro (~7k sps). Curriculum rápido hacia pistas completas de 240 m y
+# práctica dedicada de obstáculos hardcore-plus (tamaño completo, scale=1 fuera de maraton).
+extends: ppo_curriculum.yaml
+name: ppo_largo
+n_envs: 8
+time_limit_hours: 14
+stages:
+  - name: base
+    timesteps: 3000000
+    envs:
+      - {profile: plano, length: 50, max_steps: 1500}
+      - {profile: suave, length: 50, max_steps: 1500}
+  - name: obstaculos
+    timesteps: 12000000
+    envs:
+      - {profile: suave,      length: 60, max_steps: 1800}
+      - {profile: pendientes, length: 60, max_steps: 1800}
+      - {profile: escalones,  length: 60, max_steps: 1800}
+      - {profile: bloques,    length: 60, max_steps: 1800}
+      - {profile: huecos,     length: 60, max_steps: 1800}
+      - {profile: mixto,      length: 80, max_steps: 2400}
+  - name: maraton
+    timesteps: 25000000
+    envs:
+      - {profile: mixto,   length: 80,  max_steps: 2400}
+      - {profile: maraton, length: 120, max_steps: 3000}
+      - {profile: maraton, length: 240, max_steps: 6000, weight: 2}
+      - {profile: maraton, difficulty: hardcore, length: 240, max_steps: 6000}
+  - name: hardcore
+    timesteps: 260000000
+    envs:
+      - {profile: maraton,   difficulty: hardcore-plus, length: 240, max_steps: 6000, weight: 3}
+      - {profile: maraton,   difficulty: hardcore,      length: 240, max_steps: 6000}
+      - {profile: maraton,   length: 240, max_steps: 6000}
+      - {profile: huecos,    difficulty: hardcore-plus, length: 40, max_steps: 1200}
+      - {profile: bloques,   difficulty: hardcore-plus, length: 40, max_steps: 1200}
+      - {profile: escalones, difficulty: hardcore-plus, length: 40, max_steps: 1200}
+      - {profile: mixto,     difficulty: hardcore-plus, length: 80, max_steps: 2400}
+eval:
+  every_steps: 3000000
+  progress_every: 1000000
+checkpoint:
+  every_steps: 5000000
+  keep: 100

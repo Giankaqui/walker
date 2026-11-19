@@ -51,12 +51,19 @@ def build_model(cfg: dict, venv, device: str, n_envs: int):
     policy_kwargs = dict(kwargs.pop("policy_kwargs", {}) or {})
     if cfg.get("utd") is not None and cfg["algo"] in ("SAC", "TD3"):  # actualizaciones por transición, sin depender de n_envs
         kwargs["gradient_steps"] = max(1, round(float(cfg["utd"]) * int(kwargs.get("train_freq", 1)) * n_envs))
+    if isinstance(kwargs.get("learning_rate"), str) and kwargs["learning_rate"].startswith("lin_"):  # lin_X: decae dentro de cada stage (piso 10 %)
+        lr0 = float(kwargs["learning_rate"][4:])
+        kwargs["learning_rate"] = lambda progress_remaining: max(0.1, progress_remaining) * lr0
     if isinstance(policy_kwargs.get("activation_fn"), str):
         policy_kwargs["activation_fn"] = ACTIVATIONS[policy_kwargs["activation_fn"]]
     if cfg.get("init_from"):  # arranque en caliente desde el mejor modelo de otro experimento
         src = _init_dir(cfg)
         print(f"Inicializando desde {src / 'best' / 'model.zip'}", flush=True)
-        return cls.load(src / "best" / "model.zip", env=venv, device=device)
+        # SB3 conserva los hiperparámetros guardados en el zip: se sobrescriben los que tiene sentido cambiar al afinar.
+        custom = {k: kwargs[k] for k in ("learning_rate", "ent_coef", "target_kl", "clip_range", "n_epochs") if k in kwargs}
+        custom["seed"] = cfg["seed"]  # si no, _setup_model resiembra el entorno con la semilla guardada en el zip
+        print(f"  hiperparámetros sobrescritos: {custom}", flush=True)
+        return cls.load(src / "best" / "model.zip", env=venv, device=device, custom_objects=custom)
     return cls("MlpPolicy", venv, seed=cfg["seed"], device=device, verbose=0, policy_kwargs=policy_kwargs, **kwargs)
 
 

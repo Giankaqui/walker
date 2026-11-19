@@ -1,0 +1,9 @@
+# Soup iterado, 2ª vuelta: afinado desde soupit2 (SB3 completo promediado), misma mezcla que ppo_ft_hard.
+extends: ppo_ft_hard.yaml
+name: ppo_it3_a
+seed: 61
+n_envs: 4
+init_from: init_soupit2   # <runs>/init_soupit2/best/{model.zip,obs_rms.pkl} (ver PIPELINE.md, «Ruta PPO local»)
+algo_kwargs:
+  learning_rate: 0.00003
+  target_kl: 0.01

@@ -1,5 +1,5 @@
 # Dependencias adicionales de esta entrega, con sus versiones.
 # No duplique ni cambie las versiones del simulador del laboratorio.
-# La inferencia solo usa torch (nn.Linear + state_dict, API estable). Fije aquí la versión con la que
-# entrenó: queda registrada en agente/meta.json (campo env.torch) tras `python -m training.export`.
-torch>=2.2
+# La inferencia solo usa torch (nn.Linear + state_dict, API estable) y numpy.
+# Entrenado y verificado con torch 2.15.0 (también verificado con 2.14.0) y numpy 2.2.6.
+torch>=2.5

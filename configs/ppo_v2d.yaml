@@ -1,0 +1,38 @@
+# D: como B (gamma 0.995) + learning rate con decaimiento lineal + stage hardcore con más huecos/bloques hardcore-plus.
+extends: ppo_v2b.yaml
+name: ppo_v2d
+seed: 7
+algo_kwargs:
+  learning_rate: lin_0.0003
+stages:
+  - name: base
+    timesteps: 3000000
+    envs:
+      - {profile: plano, length: 50, max_steps: 1500}
+      - {profile: suave, length: 50, max_steps: 1500}
+  - name: obstaculos
+    timesteps: 12000000
+    envs:
+      - {profile: suave,      length: 60, max_steps: 1800}
+      - {profile: pendientes, length: 60, max_steps: 1800}
+      - {profile: escalones,  length: 60, max_steps: 1800}
+      - {profile: bloques,    length: 60, max_steps: 1800}
+      - {profile: huecos,     length: 60, max_steps: 1800, weight: 2}
+      - {profile: mixto,      length: 80, max_steps: 2400}
+  - name: maraton
+    timesteps: 20000000
+    envs:
+      - {profile: mixto,   length: 80,  max_steps: 2400}
+      - {profile: maraton, length: 240, max_steps: 6000, weight: 2}
+      - {profile: maraton, difficulty: hardcore, length: 240, max_steps: 6000}
+      - {profile: huecos,  difficulty: hardcore, length: 40, max_steps: 1200}
+  - name: hardcore
+    timesteps: 115000000
+    envs:
+      - {profile: maraton,   difficulty: hardcore-plus, length: 240, max_steps: 6000, weight: 2}
+      - {profile: maraton,   difficulty: hardcore,      length: 240, max_steps: 6000}
+      - {profile: maraton,   length: 240, max_steps: 6000, weight: 2}
+      - {profile: huecos,    difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 2}
+      - {profile: bloques,   difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 2}
+      - {profile: escalones, difficulty: hardcore-plus, length: 40, max_steps: 1200}
+      - {profile: mixto,     difficulty: hardcore-plus, length: 80, max_steps: 2400}

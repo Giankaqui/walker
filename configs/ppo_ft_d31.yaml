@@ -1,0 +1,25 @@
+# Afinado de D31.5M con learning rate muy bajo; checkpoints cada 1M.
+extends: ppo_v2d.yaml
+name: ppo_ft_d31
+seed: 13
+n_envs: 4
+init_from: init_d31   # <runs>/init_d31/best/{model.zip,obs_rms.pkl} (ver PIPELINE.md, «Ruta PPO local»)
+algo_kwargs:
+  learning_rate: 0.00005
+  target_kl: 0.015
+eval:
+  every_steps: 2000000
+checkpoint:
+  every_steps: 1000000
+  keep: 400
+stages:
+  - name: afinado
+    timesteps: 81524948
+    envs:
+      - {profile: maraton,   difficulty: hardcore-plus, length: 240, max_steps: 6000, weight: 2}
+      - {profile: maraton,   difficulty: hardcore,      length: 240, max_steps: 6000}
+      - {profile: maraton,   length: 240, max_steps: 6000, weight: 2}
+      - {profile: huecos,    difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 2}
+      - {profile: bloques,   difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 2}
+      - {profile: escalones, difficulty: hardcore-plus, length: 40, max_steps: 1200}
+      - {profile: mixto,     difficulty: hardcore-plus, length: 80, max_steps: 2400}

@@ -35,6 +35,74 @@
 
 ---
 
+# Ruta PPO local (la que produjo la entrega actual de `agente/`)
+
+**Resumen:** PPO estable en un CPU local potente + afinados cortos + *model soups* (promedio de pesos de checkpoints), elegidos con miles de carreras sobre pistas maratón nuevas. Medido en un Mac M4 Pro (12 núcleos): ~7k pasos/s por run con 2–4 runs a la vez (SAC en T4: 98–534 sps).
+
+### Linaje de `agente/policy.pt`
+| # | Run (config) | Desde | Qué se toma |
+|---|---|---|---|
+| 1 | `ppo_v2d` (hereda `ppo_v2b` → `ppo_largo` → `ppo_curriculum`) | cero | checkpoint 31,5M → `<runs>/init_d31/best/` |
+| 2 | `ppo_ft_hard` (lr 5e-5, solo maratones hardcore/hc-plus + obstáculos grandes) | `init_d31` | soup SB3 de 32,5–36,5M → `<runs>/init_soup/` |
+| 3 | `ppo_ft_soup2` (lr 3e-5, otra semilla) | `init_soup` | soup SB3 de 35,5–39,5M → `<runs>/init_soupit2/` |
+| 4 | 3 ramas de ~10M pasos: `ppo_it3_a` (misma mezcla), `ppo_it3_blq` (énfasis en bloques altos con pistas propias `obst_var`/`bloques_var` de `training/tracks_extra.py`), `ppo_it3_blq6` (como blq con lr 6e-5) | `init_soupit2` | 5 checkpoints por rama (41,5–45,5M) |
+| 5 | **soup de las 3 ramas** (15 `policy.pt`) | — | **`agente/policy.pt`** |
+
+Por qué funciona (interpretación): los bloques altos (≥1,2 escalones hardcore) causan ~la mitad de las caídas en maratones hardcore. Las tres ramas mejoran en bloques frente al modelo anterior, pero las de bloques empeoran en huecos; ninguna rama sola lo supera con claridad y el promedio de pesos de las tres sí.
+
+### Comandos (desde la raíz del repo; `<runs>` = `runs/`, o `$LAB4_RUNS_DIR` si está definido)
+```bash
+python -m training.train --config configs/ppo_v2d.yaml            # cortar a mano tras el checkpoint 31.5M (SIGTERM, ver abajo; ojo con los nombres, ver nota)
+mkdir -p runs/init_d31/best
+cp runs/ppo_v2d/ckpt/step_31524948.zip           runs/init_d31/best/model.zip
+cp runs/ppo_v2d/ckpt/step_31524948_obs_rms.pkl   runs/init_d31/best/obs_rms.pkl
+python -m training.train --config configs/ppo_ft_hard.yaml         # hasta ~37M
+python -m training.herramientas.soup_sb3 runs/init_soup --base runs/ppo_ft_hard/ckpt/step_34524948.zip runs/ppo_ft_hard/ckpt/step_3{2,3,4,5,6}524948.zip
+python -m training.train --config configs/ppo_ft_soup2.yaml        # hasta ~40M
+python -m training.herramientas.soup_sb3 runs/init_soupit2 runs/ppo_ft_soup2/ckpt/step_3{5,6,7,8,9}524948.zip
+for c in ppo_it3_a ppo_it3_blq ppo_it3_blq6; do python -m training.train --config configs/$c.yaml & done; wait   # cortar tras 45.5M
+python -m training.herramientas.soup_window runs/soup_ramas/policy.pt 41.5 45.5 runs/ppo_it3_blq runs/ppo_it3_blq6 runs/ppo_it3_a
+cp runs/soup_ramas/policy.pt agente/policy.pt                    # solo si gana en la re-evaluación (abajo)
+```
+- Verificado con los checkpoints originales: estos comandos reconstruyen **bit a bit** `init_soup` e `init_soupit2` (pesos, normalización, pasos, optimizador) y `agente/policy.pt`. El orden importa: el promedio en otro orden cambia ~1e-7 por redondeo, y en `soup_sb3` el primer zip (o `--base`) fija `num_timesteps`, optimizador y semilla del resultado (en `init_soup` fue el de 34,5M, así que `ppo_ft_soup2` siguió desde 34,5M).
+- Reentrenar desde cero **no** da los mismos pesos (dinámica caótica, varios procesos; además `ppo_ft_hard` corrió antes del parche de `seed`). El soup de ramas **varía mucho entre tiradas**: repetir el paso 4 con otras semillas/ramas dio 535–629 llegadas (réplica exacta: 579) frente a 658 en las mismas 1680 carreras.
+- **Nombres de checkpoint:** `ppo_v2d` original se pausó a 6,52M y se reanudó; como guarda cada 5M desde el último guardado, sus checkpoints quedaron en `…_524948` y todos los runs siguientes heredan ese desfase (con `init_from`, los pasos continúan desde los del modelo inicial). Un `ppo_v2d` nuevo guardará en 5M, 10M, …: usar p. ej. `--set checkpoint.every_steps=1000000`, tomar el checkpoint más cercano a 31,5M y ajustar los nombres de los comandos siguientes. Con `n_envs` que no divide 1M (p. ej. 3) los nombres derivan unos pasos por millón: `soup_window` toma el más cercano.
+- Con `init_from`, los `timesteps` de los stages son **absolutos** (incluyen los pasos del modelo inicial): por eso los afinados usan un tope de 81524948. Si el tope es menor que los pasos del modelo inicial, el run termina sin entrenar.
+- `init_from` aplica `learning_rate`, `ent_coef`, `target_kl`, `clip_range`, `n_epochs` y `seed` del YAML nuevo (parche en `train.py`; antes SB3 restauraba los guardados y dos semillas daban checkpoints idénticos). `n_steps`, `batch_size`, `gamma` siguen siendo los guardados.
+- `learning_rate: lin_X` ⇒ lr = X·max(0,1; 1 − pasos/fin_del_stage), con pasos absolutos: baja dentro de cada stage y **vuelve a subir** al empezar el siguiente.
+
+### Elegir qué se entrega (`training.herramientas.holdout`)
+El `EVAL` interno (10 carreras, 1 semilla) **no distingue candidatos**. La elección se hace con pistas maratón 240 m **nuevas** × 6 semillas, criterio del curso:
+```bash
+python -m training.herramientas.holdout runs/ppo_it3_a --set final --seeds 5 --procs 8 --only step_41 step_42   # checkpoints de un run
+python -m training.herramientas.holdout runs/comparacion --set final --seeds 5 --procs 8 \
+    --ensemble NUEVO=runs/soup_ramas/policy.pt ACTUAL=agente/policy.pt --only NUEVO ACTUAL           # policy.pt sueltos
+```
+- Sets: `final`, `confirm`, `test3` (60 pistas: 20 normal / 20 hardcore / 20 hardcore-plus = 360 carreras) y `test4`…`test11` (100 pistas: 20/40/40 = 600 carreras). La entrega se eligió con `final+confirm+test3+test4` (658 vs 602 del modelo anterior) y se confirmó con `test5`…`test11` (ya usados: para seguir, añadir sets con semillas nuevas en `holdout.py`).
+- Ruido: el mismo modelo varía ±10–15 % entre sets de 360 carreras; dos modelos casi iguales difieren ~±25 llegadas en 1680. Diferencias menores no significan nada.
+- Reproduce al `Evaluator` oficial (mismas pistas y semillas ⇒ mismas carreras) con el `policy.pt` tal cual, **sin** el anti-atasco de `agent.py`. Cachea en `<run_dir>/holdout_<set>/`.
+
+### Resultado medido (`test5`–`test11`: 700 pistas × 6 semillas = 4200 carreras, no usados para elegir entre estos dos modelos)
+| | soup anterior (`ppo_ft_soup2` 35,5–39,5M) | **entrega actual** |
+|---|---|---|
+| Llegadas totales | 1296 | **1472** (+13,6 %, gana en los 7 sets) |
+| Hardcore + hardcore-plus (3360) | 777 (23 %) | **963 (29 %)** |
+| Normal (840) | 519 | 509 (empate) |
+| Tiempo medio por llegada | ~57,7 s | **~55 s** |
+
+Cifras de `policy.pt` sin anti-atasco en ambos modelos. `test5`–`test9` sí se usaron para descartar otras alternativas; en `test10`–`test11`, nunca tocados antes: 388 vs 352. (`agente/meta.json` quedó con la confirmación de 5 sets, la disponible al empaquetar.)
+
+Con una pista y 6 semillas (el formato oficial), la entrega gana a la anterior en ~65–70 % de las pistas hardcore; en pistas normales es casi una moneda al aire.
+
+### `agente/agent.py`: anti-atasco
+La política determinista a veces se queda quieta frente a un hueco hasta agotar el tiempo (~5 % de las carreras con la entrega). Si `|obs[2]|` (velocidad horizontal) < 0,02 durante 100 pasos, se suma ruido N(0, 0,3) a las acciones durante 30 pasos (RNG con semilla fija reiniciada en `reset()`, así que es determinista). Medido con la entrega en los 11 sets (5880 carreras): +23 llegadas y −2, neto +21 (≈ +1 %). `evaluar.py` verificado con torch 2.15 y 2.2.2.
+Ojo: la carrera por defecto de `python evaluar.py` (`validacion/maraton_01`) la entrega no la termina (se queda a ~191 m por tiempo con torch 2.15); son resultados de una sola carrera, la selección se hizo con miles.
+
+### Lo que NO funcionó (medido en miles de carreras salvo los ensembles, 240–360)
+Ensembles de acciones de políticas distintas; afinar desde un soup ya promediado (lr 3e-5 y 1e-5: siempre empeora); soups grandes de 7–14 ramas (empatan o pierden); interpolación con el modelo anterior (WiSE-FT); cambiar a una política especialista en bloques cerca de un bloque alto; ventanas de soup más tardías (+10…+14M empeoran).
+
+---
+
 
 Idea: **el código vive en el repo; el notebook de la nube solo lo lanza.** Iterar = editar `.py`/YAML → `git push` → *Run all*.
 
@@ -44,15 +112,18 @@ lab4/
 ├─ training/                              ← nuestro pipeline
 │   ├─ train.py        orquesta: YAML → curriculum → entrenar → eval → checkpoint → export
 │   ├─ envs.py         mezcla de perfiles por episodio (+ VecNormalize opcional)
+│   ├─ tracks_extra.py pistas de entrenamiento propias (obst_var, bloques_var: bloques altos de escala continua)
 │   ├─ callbacks.py    eval periódica sobre pistas reales, best/last, progreso, límite de tiempo
 │   ├─ checkpoints.py  modelo + replay buffer + normalización (reanudable)
 │   ├─ export.py       política SB3 → MLPPolicy (verifica que da las mismas acciones) → policy.pt
 │   ├─ config.py       YAML con `extends` y `--set clave=valor`
-│   └─ runtime.py      detecta Colab/Kaggle/local y dónde guardar los runs
-├─ configs/            base.yaml (curriculum + eval) · sac_curriculum.yaml · ppo_curriculum.yaml · smoke.yaml
+│   ├─ runtime.py      detecta Colab/Kaggle/local y dónde guardar los runs
+│   └─ herramientas/   holdout.py (re-evaluar candidatos en pistas nuevas) · soup.py · soup_sb3.py · soup_window.py
+├─ configs/            base.yaml (curriculum + eval) · sac_curriculum.yaml · sac_max.yaml · ppo_curriculum.yaml · smoke*.yaml
+│                      ppo_largo → ppo_v2b → ppo_v2d → ppo_ft_d31 → ppo_ft_hard → ppo_ft_soup2 / ppo_it3_* (linaje de la entrega)
 ├─ notebooks/train_cloud.ipynb            ← 4 celdas, idéntico en Colab y Kaggle
 ├─ agente/                                ← ENTREGA (no cambia entre experimentos, salvo policy.pt)
-│   ├─ agent.py  architecture.py          adaptador + MLP en PyTorch puro (API estable, sin TorchScript)
+│   ├─ agent.py  architecture.py          adaptador (+ anti-atasco) + MLP en PyTorch puro (API estable, sin TorchScript)
 │   └─ policy.pt  meta.json               pesos + normalización (los genera training.export)
 └─ runs/<nombre>/      (ignorado por git)
     ├─ config.resolved.yaml  meta.json    reproducibilidad (config final + commit + versiones)
@@ -70,11 +141,11 @@ lab4/
 | Cambiar un hiperparámetro sin editar archivos | `--set algo_kwargs.learning_rate=0.0001` (o `OVERRIDES` en el notebook) |
 | Cambiar de algoritmo | `configs/ppo_curriculum.yaml` (SAC/TD3/PPO soportados) |
 | Seguir donde quedó (sesión cortada) | volver a ejecutar lo mismo: detecta `ckpt/` y reanuda |
-| Afinar desde el mejor de otro run | `init_from: sac_v1` |
-| Entregar | `python -m training.export runs/<nombre> --to agente` y luego `python evaluar.py` |
+| Afinar desde el mejor de otro run | `init_from: sac_v1` (lee `<runs>/sac_v1/best/model.zip` + `obs_rms.pkl`; aplica lr, ent_coef, target_kl, clip_range, n_epochs y seed del YAML nuevo) |
+| Entregar | elegir con `python -m training.herramientas.holdout` (ver «Ruta PPO local»), copiar el `policy.pt` ganador a `agente/` y `python evaluar.py`. `training.export runs/<nombre> --to agente` copia solo `best_agent` |
 
 ## Qué se mide (criterio del ranking del curso)
-El profesor evalúa 6 carreras y ordena por: **1) nº de llegadas a meta**, 2) **menor tiempo medio** de las completadas, 3) mayor distancia media. El pipeline elige el *best* con ese mismo orden (`training/callbacks.py::rank_key`) sobre las suites de `eval.select_on` (por defecto `validacion` + `hardcore`). Se desconoce de qué pistas saldrán las 6 carreras: si lo averiguan, ajusten `select_on`.
+El profesor evalúa 6 carreras sobre **una pista nueva** («empieza normal y se complica mucho»; probablemente el perfil maratón de 240 m), cada una con una semilla de condición inicial distinta, y ordena por: **1) nº de llegadas a meta**, 2) **menor tiempo medio** de las completadas, 3) mayor distancia media. El pipeline elige el *best* con ese mismo orden (`training/callbacks.py::rank_key`) sobre las suites de `eval.select_on` (por defecto `validacion` + `hardcore`). Ese *best* interno (10 carreras) es solo orientativo: la entrega se elige re-evaluando candidatos en pistas nuevas (ver «Ruta PPO local»).
 La política evaluada es **exactamente el `policy.pt` que se entrega** (red + normalización).
 
 ## Resistencia a fallos (todo probado con fallos reales, ver tabla)
@@ -84,7 +155,7 @@ La política evaluada es **exactamente el `policy.pt` que se entrega** (red + no
 | Checkpoint más reciente corrupto (VM muere escribiendo en Drive) | Cae al anterior (se conservan 2) y avisa | ✅ archivo truncado |
 | Replay buffer ilegible | Sigue con buffer vacío en vez de abortar | código |
 | Falla la evaluación o el guardado (Drive caído, disco lleno) | Avisa y el entrenamiento continúa | ✅ fallos inyectados |
-| `SIGTERM` / Ctrl+C | Guarda checkpoint antes de salir | código |
+| `SIGTERM` / Ctrl+C | Guarda checkpoint antes de salir. **A veces el proceso se cuelga después** al cerrar `SubprocVecEnv` (visto en local): esperar `>>> Interrumpido: guardando checkpoint.` en el log y, si no aparece `FIN.` en ~1 min, `kill -9 <pid>` (el checkpoint ya está escrito) | código / ⚠ cuelgue al cerrar |
 | `--fresh` / `FRESH=True` olvidado | Archiva el run anterior (`nombre.old-fecha`), no lo borra | ✅ |
 | Cortes por límite de sesión | `time_limit_hours` sale limpio antes del límite | código |
 | Print con símbolos en consola cp1252 | No tumba el entrenamiento | ✅ (bug encontrado y corregido) |

@@ -9,6 +9,8 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 
 from walker_lab.environment import WalkerEnv
 
+from .tracks_extra import KINDS, ExtraTrackEnv
+
 ENV_KEYS = ("profile", "difficulty", "length", "max_steps")
 
 
@@ -22,7 +24,9 @@ class MixedWalkerEnv(gym.Env):
 
     def __init__(self, specs: list[dict], seed: int = 0):
         super().__init__()
-        self.envs = [WalkerEnv(**{k: s[k] for k in ENV_KEYS if k in s}) for s in specs]
+        # perfiles propios de training/tracks_extra.py (obst_var, bloques_var): pista nueva en cada reset
+        self.envs = [ExtraTrackEnv(s["profile"], s.get("length", 60), s.get("max_steps", 1800)) if s["profile"] in KINDS
+                     else WalkerEnv(**{k: s[k] for k in ENV_KEYS if k in s}) for s in specs]
         weights = np.array([float(s.get("weight", 1.0)) for s in specs])
         self.p = weights / weights.sum()
         self.observation_space = self.envs[0].observation_space

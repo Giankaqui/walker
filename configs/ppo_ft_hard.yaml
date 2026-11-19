@@ -1,0 +1,18 @@
+# Afinado especializado desde D31.5M para la evaluación anunciada (maratón que empieza normal y se complica mucho):
+# solo maratones hardcore/hardcore-plus de 240 m + práctica densa de obstáculos grandes del tramo final.
+extends: ppo_ft_d31.yaml
+name: ppo_ft_hard
+seed: 21
+algo_kwargs:
+  learning_rate: 0.00005
+  target_kl: 0.015
+stages:
+  - name: afinado_hard
+    timesteps: 81524948
+    envs:
+      - {profile: maraton,   difficulty: hardcore-plus, length: 240, max_steps: 6000, weight: 4}
+      - {profile: maraton,   difficulty: hardcore,      length: 240, max_steps: 6000, weight: 3}
+      - {profile: huecos,    difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 2}
+      - {profile: bloques,   difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 2}
+      - {profile: escalones, difficulty: hardcore-plus, length: 40, max_steps: 1200, weight: 1}
+      - {profile: mixto,     difficulty: hardcore-plus, length: 80, max_steps: 2400, weight: 1}

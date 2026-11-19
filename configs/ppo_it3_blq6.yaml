@@ -1,0 +1,7 @@
+# Como ppo_it3_blq pero con lr 6e-5 (más margen para aprender a trepar bloques altos) y otra semilla.
+extends: ppo_it3_blq.yaml
+name: ppo_it3_blq6
+seed: 63
+algo_kwargs:
+  learning_rate: 0.00006
+  target_kl: 0.015
