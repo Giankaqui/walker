@@ -2,8 +2,9 @@
 
 - `policy_sac.pt`: SAC (`sac_max`), el más rápido y casi perfecto en pistas normales, pero cae en obstáculos hardcore.
 - `policy_ppo.pt`: PPO (soup de ramas `x_all3`), el más robusto en pistas hardcore / hardcore-plus.
-- `detector.pt`: MLP pequeña (24-64-64-1) entrenada con carreras de SAC en pistas de entrenamiento (semillas
-  distintas de las de evaluación) que da, para cada observación, el log-odds de "esta pista es hardcore".
+- `detector.pt`: MLP pequeña entrenada con carreras de SAC en pistas de entrenamiento (semillas distintas de las de
+  evaluación) que da, en cada paso, el log-odds de "esta pista es hardcore". Su entrada es la observación actual y,
+  si `detector.pt` trae `lags`, también las de hace k pasos (al inicio de la carrera se repite la primera).
 
 La carrera empieza con SAC. Si la media del log-odds en los últimos `W` pasos supera `thr` (algo que en las pistas
 normales casi nunca pasa), el agente cambia a PPO y sigue con PPO hasta el final (cambio en un solo sentido).
@@ -46,8 +47,17 @@ def _to_numpy(t):
 class _Detector(nn.Module):
     def __init__(self, blob):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(24, 64), nn.Tanh(), nn.Linear(64, 64), nn.Tanh(), nn.Linear(64, 1))
-        self.net.load_state_dict(blob["state"])
+        st = blob["state"]
+        n = len([k for k in st if k.endswith(".weight")])
+        layers = []
+        for i in range(n):
+            w = st[f"{2 * i}.weight"]
+            layers.append(nn.Linear(w.shape[1], w.shape[0]))
+            if i < n - 1:
+                layers.append(nn.Tanh())
+        self.net = nn.Sequential(*layers)
+        self.net.load_state_dict(st)
+        self.lags = [int(v) for v in blob.get("lags", [0])]
         self.register_buffer("mu", blob["mu"].float())
         self.register_buffer("sd", blob["sd"].float())
 
@@ -66,10 +76,12 @@ class Agent(BaseAgent):
         blob = torch.load(self.model_dir / "detector.pt", map_location=self.device, weights_only=True)
         self.window, self.thr = int(blob["W"]), float(blob["thr"])
         self.detector = _Detector(blob).to(self.device).eval()
+        self._hist_len = max(self.detector.lags) + 1
         self.reset()
 
     def reset(self):
         self._logits = deque(maxlen=self.window)
+        self._hist = deque(maxlen=self._hist_len)
         self.switched = False
         self._speeds = deque(maxlen=STALL_WINDOW)
         self._noise_left = 0
@@ -81,7 +93,10 @@ class Agent(BaseAgent):
         xt = _to_tensor(x, self.device).unsqueeze(0)
         with torch.no_grad():
             if not self.switched:
-                self._logits.append(float(self.detector(xt)[0, 0]))
+                self._hist.append(x)
+                h = list(self._hist)
+                feat = np.concatenate([h[max(len(h) - 1 - lag, 0)] for lag in self.detector.lags])
+                self._logits.append(float(self.detector(_to_tensor(feat, self.device).unsqueeze(0))[0, 0]))
                 if len(self._logits) == self.window and sum(self._logits) / self.window > self.thr:
                     self.switched = True
             out = (self.ppo if self.switched else self.sac)(xt)[0].cpu()

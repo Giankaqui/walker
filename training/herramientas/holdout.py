@@ -51,8 +51,26 @@ TEST10 = ([("normal", s) for s in range(107001, 107021)] + [("hardcore", s) for 
           + [("hardcore-plus", s) for s in range(108001, 108041)])
 TEST11 = ([("normal", s) for s in range(117001, 117021)] + [("hardcore", s) for s in range(119001, 119041)]
           + [("hardcore-plus", s) for s in range(118001, 118041)])
+TEST12 = ([("normal", s) for s in range(127001, 127021)] + [("hardcore", s) for s in range(129001, 129041)]
+          + [("hardcore-plus", s) for s in range(128001, 128041)])
+TEST13 = ([("normal", s) for s in range(137001, 137021)] + [("hardcore", s) for s in range(139001, 139041)]
+          + [("hardcore-plus", s) for s in range(138001, 138041)])
+TEST14 = ([("normal", s) for s in range(147001, 147021)] + [("hardcore", s) for s in range(149001, 149041)]
+          + [("hardcore-plus", s) for s in range(148001, 148041)])
+TEST15 = ([("normal", s) for s in range(157001, 157021)] + [("hardcore", s) for s in range(159001, 159041)]
+          + [("hardcore-plus", s) for s in range(158001, 158041)])
+TEST16 = ([("normal", s) for s in range(167001, 167021)] + [("hardcore", s) for s in range(169001, 169041)]
+          + [("hardcore-plus", s) for s in range(168001, 168041)])
+TEST17 = ([("normal", s) for s in range(177001, 177021)] + [("hardcore", s) for s in range(179001, 179041)]
+          + [("hardcore-plus", s) for s in range(178001, 178041)])
+TEST18 = ([("normal", s) for s in range(187001, 187021)] + [("hardcore", s) for s in range(189001, 189041)]
+          + [("hardcore-plus", s) for s in range(188001, 188041)])
+TEST19 = ([("normal", s) for s in range(197001, 197021)] + [("hardcore", s) for s in range(199001, 199041)]
+          + [("hardcore-plus", s) for s in range(198001, 198041)])
+TEST20 = ([("normal", s) for s in range(207001, 207021)] + [("hardcore", s) for s in range(209001, 209041)]
+          + [("hardcore-plus", s) for s in range(208001, 208041)])
 SETS = {"final": FINAL, "confirm": CONFIRM, "test3": TEST3, "test4": TEST4, "test5": TEST5, "test6": TEST6,
-        "test7": TEST7, "test8": TEST8, "test9": TEST9, "test10": TEST10, "test11": TEST11}
+        "test7": TEST7, "test8": TEST8, "test9": TEST9, "test10": TEST10, "test11": TEST11, "test12": TEST12, "test13": TEST13, "test14": TEST14, "test15": TEST15, "test16": TEST16, "test17": TEST17, "test18": TEST18, "test19": TEST19, "test20": TEST20}
 SET = None
 
 

@@ -9,6 +9,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 
 from walker_lab.environment import WalkerEnv
 
+from .relevo import RELEVO, RelevoEnv
 from .tracks_extra import KINDS, ExtraTrackEnv
 
 ENV_KEYS = ("profile", "difficulty", "length", "max_steps")
@@ -35,7 +36,10 @@ class _RewardShaping(gym.Wrapper):
 
 
 def _build_track_env(spec: dict, reward_shaping: dict | None) -> gym.Env:
-    if spec["profile"] in KINDS:  # perfiles propios de training/tracks_extra.py (obst_var, bloques_var): pista nueva en cada reset
+    if spec["profile"] in RELEVO:  # SAC + detector de agente/ conducen hasta el cambio; PPO aprende desde ahí
+        env = RelevoEnv(spec["profile"], spec.get("length", 240), spec.get("max_steps", 6000),
+                        d_min=spec.get("d_min", 125.0), d_max=spec.get("d_max", 150.0))
+    elif spec["profile"] in KINDS:  # perfiles propios de training/tracks_extra.py (obst_var, bloques_var): pista nueva en cada reset
         env = ExtraTrackEnv(spec["profile"], spec.get("length", 60), spec.get("max_steps", 1800))
     else:
         env = WalkerEnv(**{k: spec[k] for k in ENV_KEYS if k in spec})

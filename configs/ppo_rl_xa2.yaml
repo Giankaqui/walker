@@ -1,0 +1,6 @@
+# Como ppo_rl_xa (relevo temprano desde x_all3), otra semilla para el soup entre ramas.
+extends: ppo_rl_xa.yaml
+name: ppo_rl_xa2
+seed: 133
+algo_kwargs:
+  learning_rate: 0.00003
