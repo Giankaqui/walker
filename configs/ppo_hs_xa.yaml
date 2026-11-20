@@ -1,9 +1,0 @@
-# Especialista hardcore para el híbrido (PPO solo corre en pistas hardcore): mezcla de ppo_ft_hard, sin pistas normales.
-extends: ppo_ft_hard.yaml
-name: ppo_hs_xa
-seed: 121
-n_envs: 3
-init_from: init_xall3
-algo_kwargs:
-  learning_rate: 0.00003
-  target_kl: 0.01

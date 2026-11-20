@@ -69,8 +69,18 @@ TEST19 = ([("normal", s) for s in range(197001, 197021)] + [("hardcore", s) for 
           + [("hardcore-plus", s) for s in range(198001, 198041)])
 TEST20 = ([("normal", s) for s in range(207001, 207021)] + [("hardcore", s) for s in range(209001, 209041)]
           + [("hardcore-plus", s) for s in range(208001, 208041)])
+TEST21 = ([("normal", s) for s in range(217001, 217021)] + [("hardcore", s) for s in range(219001, 219041)]
+          + [("hardcore-plus", s) for s in range(218001, 218041)])
+TEST22 = ([("normal", s) for s in range(227001, 227021)] + [("hardcore", s) for s in range(229001, 229041)]
+          + [("hardcore-plus", s) for s in range(228001, 228041)])
+TEST23 = ([("normal", s) for s in range(237001, 237021)] + [("hardcore", s) for s in range(239001, 239041)]
+          + [("hardcore-plus", s) for s in range(238001, 238041)])
+TEST24 = ([("normal", s) for s in range(247001, 247021)] + [("hardcore", s) for s in range(249001, 249041)]
+          + [("hardcore-plus", s) for s in range(248001, 248041)])
+TEST25 = ([("normal", s) for s in range(257001, 257021)] + [("hardcore", s) for s in range(259001, 259041)]
+          + [("hardcore-plus", s) for s in range(258001, 258041)])
 SETS = {"final": FINAL, "confirm": CONFIRM, "test3": TEST3, "test4": TEST4, "test5": TEST5, "test6": TEST6,
-        "test7": TEST7, "test8": TEST8, "test9": TEST9, "test10": TEST10, "test11": TEST11, "test12": TEST12, "test13": TEST13, "test14": TEST14, "test15": TEST15, "test16": TEST16, "test17": TEST17, "test18": TEST18, "test19": TEST19, "test20": TEST20}
+        "test7": TEST7, "test8": TEST8, "test9": TEST9, "test10": TEST10, "test11": TEST11, "test12": TEST12, "test13": TEST13, "test14": TEST14, "test15": TEST15, "test16": TEST16, "test17": TEST17, "test18": TEST18, "test19": TEST19, "test20": TEST20, "test21": TEST21, "test22": TEST22, "test23": TEST23, "test24": TEST24, "test25": TEST25}
 SET = None
 
 

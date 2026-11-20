@@ -1,11 +1,17 @@
 {
-  "modelo": "Agente híbrido: SAC (policy_sac.pt, MLP 24-400-300-4) + PPO (policy_ppo.pt, MLP 24-256-256-4 con normalización) + detector de pista difícil (detector.pt, MLP 24-64-64-1)",
-  "logica": "Empieza con SAC. Si la media del log-odds del detector en los últimos 25 pasos supera 3 (pista hardcore), cambia a PPO hasta el final (una sola vez, cambio inmediato). Anti-atasco: si |vel. horizontal| < 0.02 durante 100 pasos, ruido N(0, 0.3) en las acciones durante 30 pasos (RNG con semilla fija reiniciada en reset()).",
+  "modelo": "Agente híbrido: SAC (policy_sac.pt, MLP 24-400-300-4) + PPO especialista en pistas hardcore (policy_ppo.pt, MLP 24-256-256-4 con normalización) + detector de pista difícil (detector.pt, MLP 24-64-64-1)",
+  "logica": "Empieza con SAC. Si la media del log-odds del detector en los últimos 25 pasos supera 3 (pista hardcore), cambia a PPO hasta el final (una sola vez, cambio inmediato); detecciones a más de 155 m (odometría) se ignoran. Anti-atasco: si |vel. horizontal| < 0.02 durante 100 pasos, ruido N(0, 0.3) en las acciones durante 30 pasos (RNG con semilla fija reiniciada en reset()).",
   "origen": {
     "policy_sac.pt": "sac_max (paso 6.535.776), entrenado por Vasco2510 en GPU",
-    "policy_ppo.pt": "x_all3: PPO ppo_v2d 31.5M -> afinado hardcore -> soups iterados -> soup de 3 ramas (15 checkpoints)",
-    "detector.pt": "entrenado con 1200 carreras de SAC en maratones de entrenamiento (semillas 400001+; 400 por dificultad)"
+    "policy_ppo.pt": "x34all: PPO x_all3 afinado con RELEVO TARDÍO iterado (SAC conduce maratones hardcore/hardcore-plus hasta ~125-150 m y PPO aprende los tramos 4-5 desde ese estado; training/relevo.py): 1a vuelta -> soup -> 2a -> soup -> 3a (2 semillas, soup rt3_ab) -> 4a (4 semillas, soup); policy_ppo.pt = promedio de rt3_ab y del soup de la 4a vuelta",
+    "detector.pt": "entrenado con 1200 carreras de SAC en maratones de entrenamiento (semillas 400001+); W=25, thr=3, DET_MAX=155"
   },
-  "seleccion": "Pistas maratón nuevas x 6 semillas. Elegido (W y umbral) en 4 sets (1680 carreras): 744 llegadas vs 658 del PPO solo y 509 del SAC solo. Confirmado con el agent.py real en 7 sets no usados (4200 carreras): 1629 vs 1488 (PPO) vs 1015 (SAC); normal 716/840, hardcore 532/1680, hardcore-plus 381/1680; ~51 s por llegada.",
-  "entorno": {"python": "3.12", "torch": "2.15.0", "stable_baselines3": "2.9.2", "gymnasium": "1.2.3", "numpy": "2.2.6"}
+  "seleccion": "Pistas maratón nuevas x 6 semillas, evaluando la carpeta agente/ completa como el Evaluator oficial. Confirmación final en 6 sets nunca usados (test20-25, 3600 carreras): 2599 llegadas (normal 611/720, hardcore 1048/1440, hardcore-plus 940/1440, 53.3 s por llegada) vs 2529 del PPO de la 3a vuelta. Frente al híbrido del 19-nov con el PPO x_all3: en 4200 carreras (test5-11) aquel llegaba 1629 (39%); este llega 72% en test20-25.",
+  "entorno": {
+    "python": "3.12",
+    "torch": "2.15.0 (verificado también con 2.2.2)",
+    "stable_baselines3": "2.9.2",
+    "gymnasium": "1.2.3",
+    "numpy": "2.2.6"
+  }
 }

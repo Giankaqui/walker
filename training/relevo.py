@@ -23,7 +23,7 @@ from walker_lab.environment import WalkerEnv
 from .runtime import REPO_ROOT
 
 RELEVO = {"relevo_hc": "hardcore", "relevo_hcp": "hardcore-plus",
-          "relevo_t_hc": "hardcore", "relevo_t_hcp": "hardcore-plus"}
+          "relevo_t_hc": "hardcore", "relevo_t_hcp": "hardcore-plus", "relevo_t_n": "normal"}
 _MODELS = {}
 
 

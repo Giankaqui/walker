@@ -1,0 +1,5 @@
+# Cuarta vuelta del relevo tardío: desde init_rt3ab (soup SB3 de ppo_rt3_a + ppo_rt3_b 59.5-63.5M), misma mezcla.
+extends: ppo_rt_xa.yaml
+name: ppo_rt4_d
+seed: 184
+init_from: init_rt3ab

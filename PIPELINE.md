@@ -42,9 +42,9 @@
 | Archivo | Qué es |
 |---|---|
 | `agente/policy_sac.pt` | SAC `sac_max` (24-400-300-4) |
-| `agente/policy_ppo.pt` | PPO `x_all3` (24-256-256-4 + normalización; ver «Ruta PPO local») |
+| `agente/policy_ppo.pt` | PPO especialista en pistas hardcore (24-256-256-4 + normalización): relevo tardío iterado desde `x_all3` (ver abajo) |
 | `agente/detector.pt` | MLP 24-64-64-1: log-odds por paso de «pista hardcore» + regla `W`/`thr` |
-| `agente/agent.py` | SAC hasta que la media del log-odds en los últimos `W`=25 pasos supera `thr`=3; desde ahí PPO hasta el final (un solo cambio, inmediato). Anti-atasco igual que antes |
+| `agente/agent.py` | SAC hasta que la media del log-odds en los últimos `W`=25 pasos supera `thr`=3 (detecciones a más de `DET_MAX`=155 m por odometría se ignoran); desde ahí PPO hasta el final (un solo cambio, inmediato). Anti-atasco igual que antes. Otras opciones en `detector.pt` (D_SW, DELAY, FLAT, STALL2, N_SW) quedaron desactivadas por medición |
 
 ```bash
 python -m training.herramientas.detector datos runs/detector/sac.npz agente/policy_sac.pt --seed0 400001 --n 400   # 1200 carreras de SAC (~1 min)
@@ -65,6 +65,47 @@ python -m training.herramientas.evaluar_agente . HIBRIDO --set test5 test6 --pro
 - El híbrido gana a PPO en los 7 sets de confirmación y a SAC por mucho. En normales iguala a SAC (cambia a PPO por error en ~7 % de las pistas normales); en hardcore pierde ~6 % frente a PPO solo (algunas caídas justo después del cambio). Si la pista del profesor es normal, gana ~+24 puntos; si es hardcore, cede ~2.
 - Probado y descartado: esperar a tener ambos pies apoyados para cambiar, o mezclar acciones durante 10–30 pasos (633–729 vs 744: el cambio inmediato es mejor); ventanas/umbrales más conservadores (W100: 691–703).
 - Públicas con `evaluar.py`: validación 4/5 (~42 s; cae en `maraton_01` a 204 m, igual que SAC solo), hardcore 2/5 (`maraton_03`, `maraton_04`). Con torch 2.2.2 las redes dan las mismas acciones (±1e-7) pero cada carrera puede cambiar por caos (360 carreras: 164 vs 177, dentro del ruido).
+
+## PPO del híbrido: relevo tardío iterado (20-nov)
+
+En el híbrido, PPO solo conduce pistas hardcore, y desde el cambio (~55-90 m). Entrenarlo **exactamente para eso** fue lo que más subió el rendimiento:
+
+- **Relevo** (`training/relevo.py`): en cada episodio de entrenamiento, SAC (+ detector) de `agente/` conduce una maratón hardcore/hardcore-plus y PPO aprende **desde el estado en que recibe el control**. Perfiles `relevo_hc`/`relevo_hcp` (relevo temprano: SAC hasta que dispara el detector, ~65 m) y `relevo_t_hc`/`relevo_t_hcp` (relevo **tardío**: SAC hasta una distancia sorteada en 125-150 m por odometría, así PPO practica solo los tramos 4-5, donde están todas sus caídas).
+- **Iterar con soups:** afinar desde x_all3 con relevo tardío → soup de los checkpoints +6..+10M → soup SB3 completo (`soup_sb3`) como `init_from` de la vuelta siguiente → repetir; en la 3ª vuelta, dos semillas desde el mismo init y soup de las dos ramas (`soup_window ... run_a run_b`).
+
+```bash
+python -m training.train --config configs/ppo_rt_xa.yaml            # 1ª vuelta (desde init_xall3), cortar tras +10M
+python -m training.herramientas.soup_sb3 runs/init_rtxa <los 5 ckpts 47.5-51.5M de runs/ppo_rt_xa/ckpt/>
+python -m training.train --config configs/ppo_rt2_a.yaml           # 2ª vuelta (init_rtxa)
+python -m training.herramientas.soup_sb3 runs/init_rt2a <ckpts 53.5-57.5M de ppo_rt2_a>
+python -m training.train --config configs/ppo_rt3_a.yaml & python -m training.train --config configs/ppo_rt3_b.yaml   # 3ª vuelta, 2 semillas
+python -m training.herramientas.soup_window runs/rt3_ab/policy.pt 59.5 63.5 runs/ppo_rt3_a runs/ppo_rt3_b      # -> agente/policy_ppo.pt
+python -m training.herramientas.evaluar_agente . CANDIDATO --set test20 test21 --procs 8                      # paquete completo
+```
+Con el Mac inactivo (pantalla apagada) los entrenamientos en segundo plano se frenaron de ~4k a 36-1000 pasos/s: correrlos con `caffeinate -d -i -u` y `OMP_NUM_THREADS=2`.
+
+**Evolución** (pistas hardcore + hardcore-plus de `final/confirm/test3/test4`, 1200 carreras, mismo agente salvo el PPO; cambio inmediato + `DET_MAX`=155):
+| PPO en el híbrido | Llegadas hardcore | Confirmación en un set nuevo (paquete completo, 600 carreras) |
+|---|---|---|
+| x_all3 (sin relevo, 19-nov) | 339 | — |
+| relevo temprano (`rl_xa`) | 455 | test12-14: 823/1800 vs 731 |
+| relevo tardío, 1ª vuelta (`rt_xa`) | 621 | test15-17: 969/1800 vs 791 |
+| 2ª vuelta (`rt2_a`) | 742 | test18: 410 vs 369 |
+| **3ª vuelta, soup de 2 ramas (`rt3_ab`)** | **812** | test19: 436 vs 409 |
+| 4ª vuelta (4 semillas desde init_rt3ab, soup) / 5ª vuelta | 775 / 789 | meseta |
+| **Entrega: `x34all` = promedio de `rt3_ab` y el soup de la 4ª vuelta** | 819 | ver abajo |
+
+**Confirmación final** (`test20`–`test25`, 6 sets nunca usados, 3600 carreras, paquete `agente/` completo):
+| | Total | Normal | Hardcore | Hardcore-plus | Tiempo/llegada |
+|---|---|---|---|---|---|
+| **Entrega (`x34all`)** | **2599** (72 %) | 611/720 | 1048/1440 | 940/1440 | 53,3 s |
+| `x34b` (rt3_ab + mejor rama de la 4ª) | 2591 | 611/720 | 1013/1440 | 967/1440 | 53,7 s |
+| `rt3_ab` (3ª vuelta) | 2529 | 611/720 | 1004/1440 | 914/1440 | 53,8 s |
+| Híbrido del 19-nov (PPO x_all3), en test20-21 | 444/1200 (37 %) | 199/240 | 134/480 | 111/480 | 50,9 s |
+
+Pistas públicas con `evaluar.py`: validación 4/5 (~42 s), hardcore 2/5 (las otras 3 caen a 219-228 m).
+
+**Lo que NO funcionó (medido):** cambio tardío por odometría (D_SW 125-146 m: 282-713 vs 812, también con el PPO especializado), traspaso en llano o 150 pasos después de detectar (285-291 vs 339), detector con contexto temporal (sin ganancia), umbrales más agresivos (W15/thr 2: peor), especialistas hardcore sin relevo (300-307 vs 333), relevo con traspaso en 60-150 m (449 vs 621), lr 6e-5 (318), relevo tardío en pistas **normales** con cambio a ~140 m (329-347/480 vs 418 de SAC hasta el final).
 
 ---
 

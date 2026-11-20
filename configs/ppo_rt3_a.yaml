@@ -1,0 +1,5 @@
+# Tercera vuelta del relevo tardío: desde init_rt2a (soup SB3 de ppo_rt2_a 53.5-57.5M), misma mezcla.
+extends: ppo_rt_xa.yaml
+name: ppo_rt3_a
+seed: 171
+init_from: init_rt2a

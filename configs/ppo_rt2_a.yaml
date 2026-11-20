@@ -1,0 +1,5 @@
+# Segunda vuelta del relevo tardío: desde init_rtxa (soup SB3 de ppo_rt_xa 47.5-51.5M), misma mezcla.
+extends: ppo_rt_xa.yaml
+name: ppo_rt2_a
+seed: 161
+init_from: init_rtxa
