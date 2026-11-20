@@ -16,14 +16,14 @@ Laboratorio 4 del curso de Deep Learning (UTEC): entrenar un agente de **aprendi
 ```
 walker_lab/ escenarios/ evaluar.py visualizar.py reproducir.py generar_escenario.py comprobar_instalacion.py
 requirements.txt README.md          ← MATERIAL DEL PROFESOR: SOLO LECTURA
-agente/            ← ENTREGA: agent.py (adaptador + anti-atasco) + architecture.py y policy.pt + meta.json
+agente/            ← ENTREGA: agent.py (híbrido SAC→PPO + anti-atasco) + architecture.py, policy_sac.pt, policy_ppo.pt, detector.pt, meta.json
 training/          ← pipeline propio (ver abajo)
 configs/           ← YAML de experimentos (base.yaml · sac_max = SAC en GPU · ppo_v2d → ppo_ft_hard → ppo_ft_soup2 → ppo_it3_* = linaje PPO de la entrega · ppo_curriculum = PPO original, inestable · sac_curriculum = base de smoke · smoke*)
 notebooks/train_cloud.ipynb   ← lanzador fino para Colab/Kaggle
 PIPELINE.md        ← guía de uso detallada (paso a paso, métricas, resistencia a fallos)
 runs/<nombre>/     ← resultados (git los ignora; en Colab viven en Drive)
 ```
-`training/`: `train.py` (orquesta; `init_from` aplica lr/ent_coef/target_kl/clip_range/n_epochs/seed del YAML; `learning_rate: lin_X`) · `envs.py` (mezcla de perfiles por episodio) · `callbacks.py` (progreso con desglose de tiempo, evaluación, `rank_key`) · `checkpoints.py` · `export.py` (SB3 → `MLPPolicy`, verificado) · `benchmark.py` · `report.py` · `compare.py` · `config.py` (YAML con `extends`, `--set a.b=c`) · `runtime.py` (plataforma, rutas, métricas de sistema) · `tracks_extra.py` (pistas propias de entrenamiento: bloques altos de escala continua) · `herramientas/` (`holdout.py` = re-evaluar candidatos en pistas nuevas con el criterio del curso; `soup*.py` = model soups). Detalle en PIPELINE.md, «Ruta PPO local».
+`training/`: `train.py` (orquesta; `init_from` aplica lr/ent_coef/target_kl/clip_range/n_epochs/seed del YAML; `learning_rate: lin_X`) · `envs.py` (mezcla de perfiles por episodio) · `callbacks.py` (progreso con desglose de tiempo, evaluación, `rank_key`) · `checkpoints.py` · `export.py` (SB3 → `MLPPolicy`, verificado) · `benchmark.py` · `report.py` · `compare.py` · `config.py` (YAML con `extends`, `--set a.b=c`) · `runtime.py` (plataforma, rutas, métricas de sistema) · `tracks_extra.py` (pistas propias de entrenamiento: bloques altos de escala continua) · `herramientas/` (`holdout.py` = re-evaluar candidatos en pistas nuevas con el criterio del curso; `soup*.py` = model soups; `detector.py` = detector del híbrido; `evaluar_agente.py` = evaluar una carpeta agente/ completa). Detalle en PIPELINE.md, «Ruta PPO local».
 
 ## 3. Filosofía de trabajo (política central)
 **El código vive en el repo; el notebook solo lo lanza.** Iterar = editar `.py`/YAML → commit/push → `Run all` en la nube. Ninguna lógica nueva va dentro del notebook. Los hiperparámetros se cambian por YAML o por `--set` / `OVERRIDES`, no editando código.
@@ -56,7 +56,7 @@ Entorno de prueba: Python 3.11 + `pip install -r requirements-train.txt` + torch
 5. `--fresh` archiva en vez de borrar.
 
 ## 7. Estado y hechos conocidos
-- **Entrega actual (`agente/`, 19-nov):** PPO (`ppo_v2d` 31,5M → afinado hardcore → soups iterados) + soup de 3 ramas cortas (`ppo_it3_a/blq/blq6`, 15 checkpoints). En 7 sets de pistas maratón nuevas no usados para elegir (4200 carreras): 1472 llegadas vs 1296 del modelo anterior; hardcore+hardcore-plus 963/3360 vs 777; normal 509/840 vs 519; ~55 s por llegada (cifras del `policy.pt` sin anti-atasco; el anti-atasco suma ≈ +1 %). `evaluar.py` verificado con torch 2.15 y 2.2.2.
+- **Entrega actual (`agente/`, 19-nov noche): agente híbrido** = SAC `sac_max` + detector de pista hardcore + PPO `x_all3` (PIPELINE.md, «Agente híbrido»). En 7 sets de pistas maratón nuevas (4200 carreras, `agent.py` real): 1629 llegadas vs 1488 del PPO solo y 1015 del SAC solo; normal 716/840, hardcore+plus 913/3360; ~51 s por llegada. `evaluar.py` verificado con torch 2.15 y 2.2.2.
 - **Medido (PPO local):** con los hiperparámetros de `ppo_curriculum.yaml` (run `ppo_largo`) es inestable (approx_kl ~0,3, clip_fraction ~0,7, 0/10 llegadas a 24M). Estable con n_steps 2048, batch 2048, target_kl 0.03, ent_coef 0.001, gamma 0.995 (`ppo_v2b`/`ppo_v2d`). Afinar: lr 3e-5–5e-5, target_kl 0.01–0.015.
 - **Selección:** el `EVAL` interno (10 carreras) no distingue checkpoints; elegir con `training/herramientas/holdout.py` (miles de carreras, varios sets) y confirmar en sets no usados. Ruido ≈ ±25 llegadas en 1680 carreras.
 - **SIGTERM** guarda, pero a veces el proceso se cuelga al cerrar `SubprocVecEnv`: `kill -9` tras ver el checkpoint en el log.

@@ -35,7 +35,40 @@
 
 ---
 
-# Ruta PPO local (la que produjo la entrega actual de `agente/`)
+# Agente híbrido (entrega conjunta SAC + PPO)
+
+**Idea:** los dos modelos del equipo son buenos en cosas distintas. SAC (`sac_max`, GPU) llega en ~87 % de las maratones **normales** y es rápido (~45 s), pero casi no pasa los obstáculos **hardcore**; PPO (`x_all3`, Mac) es el mejor en hardcore/hardcore-plus pero solo llega en ~61 % de las normales. La dificultad de una pista es fija y se nota en el terreno (escalones de 1,87 m, bloques cuadrados altos), así que `agente/` corre **SAC y cambia a PPO cuando un detector reconoce una pista hardcore**.
+
+| Archivo | Qué es |
+|---|---|
+| `agente/policy_sac.pt` | SAC `sac_max` (24-400-300-4) |
+| `agente/policy_ppo.pt` | PPO `x_all3` (24-256-256-4 + normalización; ver «Ruta PPO local») |
+| `agente/detector.pt` | MLP 24-64-64-1: log-odds por paso de «pista hardcore» + regla `W`/`thr` |
+| `agente/agent.py` | SAC hasta que la media del log-odds en los últimos `W`=25 pasos supera `thr`=3; desde ahí PPO hasta el final (un solo cambio, inmediato). Anti-atasco igual que antes |
+
+```bash
+python -m training.herramientas.detector datos runs/detector/sac.npz agente/policy_sac.pt --seed0 400001 --n 400   # 1200 carreras de SAC (~1 min)
+python -m training.herramientas.detector entrenar runs/detector/sac.npz runs/detector/red.pt                       # imprime falsos positivos / distancia de detección
+python -m training.herramientas.detector empaquetar runs/detector/red.pt agente/detector.pt --W 25 --thr 3
+python -m training.herramientas.evaluar_agente . HIBRIDO --set test5 test6 --procs 8                             # agente/ completo, como el Evaluator
+```
+(Con esas semillas el detector se reconstruye bit a bit. Las semillas 400001+ son de entrenamiento: no se cruzan con los sets de evaluación.)
+
+**Resultados** (pistas maratón nuevas × 6 semillas; cada agente con su `agent.py` real):
+| | Total | Normal | Hardcore | Hardcore-plus | Tiempo/llegada |
+|---|---|---|---|---|---|
+| Elección de `W`/`thr` (`final+confirm+test3+test4`, 1680) | **744** (PPO 658, SAC 509) | 411/480 | 190/600 | 143/600 | 49,6 s |
+| **Confirmación** (`test5`–`test11`, 4200, no usados) | **1629** | 716/840 | 532/1680 | 381/1680 | 51 s |
+| PPO solo (entrega anterior) | 1488 | 509/840 | **565**/1680 | **414**/1680 | 55 s |
+| SAC solo (`sac_max`) | 1015 | **721**/840 | 232/1680 | 62/1680 | **45 s** |
+
+- El híbrido gana a PPO en los 7 sets de confirmación y a SAC por mucho. En normales iguala a SAC (cambia a PPO por error en ~7 % de las pistas normales); en hardcore pierde ~6 % frente a PPO solo (algunas caídas justo después del cambio). Si la pista del profesor es normal, gana ~+24 puntos; si es hardcore, cede ~2.
+- Probado y descartado: esperar a tener ambos pies apoyados para cambiar, o mezclar acciones durante 10–30 pasos (633–729 vs 744: el cambio inmediato es mejor); ventanas/umbrales más conservadores (W100: 691–703).
+- Públicas con `evaluar.py`: validación 4/5 (~42 s; cae en `maraton_01` a 204 m, igual que SAC solo), hardcore 2/5 (`maraton_03`, `maraton_04`). Con torch 2.2.2 las redes dan las mismas acciones (±1e-7) pero cada carrera puede cambiar por caos (360 carreras: 164 vs 177, dentro del ruido).
+
+---
+
+# Ruta PPO local (produce `agente/policy_ppo.pt`)
 
 **Resumen:** PPO estable en un CPU local potente + afinados cortos + *model soups* (promedio de pesos de checkpoints), elegidos con miles de carreras sobre pistas maratón nuevas. Medido en un Mac M4 Pro (12 núcleos): ~7k pasos/s por run con 2–4 runs a la vez (SAC en T4: 98–534 sps).
 
@@ -118,13 +151,13 @@ lab4/
 │   ├─ export.py       política SB3 → MLPPolicy (verifica que da las mismas acciones) → policy.pt
 │   ├─ config.py       YAML con `extends` y `--set clave=valor`
 │   ├─ runtime.py      detecta Colab/Kaggle/local y dónde guardar los runs
-│   └─ herramientas/   holdout.py (re-evaluar candidatos en pistas nuevas) · soup.py · soup_sb3.py · soup_window.py
+│   └─ herramientas/   holdout.py · evaluar_agente.py (re-evaluar en pistas nuevas) · detector.py (híbrido) · soup*.py
 ├─ configs/            base.yaml (curriculum + eval) · sac_curriculum.yaml · sac_max.yaml · ppo_curriculum.yaml · smoke*.yaml
 │                      ppo_largo → ppo_v2b → ppo_v2d → ppo_ft_d31 → ppo_ft_hard → ppo_ft_soup2 / ppo_it3_* (linaje de la entrega)
 ├─ notebooks/train_cloud.ipynb            ← 4 celdas, idéntico en Colab y Kaggle
 ├─ agente/                                ← ENTREGA (no cambia entre experimentos, salvo policy.pt)
-│   ├─ agent.py  architecture.py          adaptador (+ anti-atasco) + MLP en PyTorch puro (API estable, sin TorchScript)
-│   └─ policy.pt  meta.json               pesos + normalización (los genera training.export)
+│   ├─ agent.py  architecture.py          híbrido SAC→PPO (+ anti-atasco) + MLP en PyTorch puro (API estable, sin TorchScript)
+│   └─ policy_sac.pt policy_ppo.pt detector.pt meta.json
 └─ runs/<nombre>/      (ignorado por git)
     ├─ config.resolved.yaml  meta.json    reproducibilidad (config final + commit + versiones)
     ├─ logs/ (csv + tensorboard)  eval_history.jsonl
