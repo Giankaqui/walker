@@ -1,0 +1,13 @@
+# Variante de sac_hardcore con moldeado de recompensa SOLO de entrenamiento (training/envs.py:_RewardShaping).
+# Motivación (FORK, Wang et al., arXiv:2010.01652, mismo entorno/recompensa base que walker_lab):
+# la caída (-100, muy por encima del resto de la recompensa por paso) vuelve a SAC excesivamente
+# conservador en hardcore. Se reduce la caída a -5 y se escala x5 el resto, como en el paper.
+# No cambia obs/acción ni cómo se elige el mejor (DistanceEvalCallback evalúa WalkerEnv sin moldear,
+# igual que evaluar.py), solo la señal de gradiente. Mismo init_from/currículo que sac_hardcore para
+# comparar de forma controlada (única diferencia: reward_shaping encendido).
+extends: sac_hardcore.yaml
+name: sac_hardcore_shaped
+seed: 3
+reward_shaping:
+  fall_penalty: 5.0
+  scale: 5.0
